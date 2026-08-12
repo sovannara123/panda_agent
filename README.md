@@ -1,4 +1,4 @@
-# Nova — AI Learning Assistant
+# Panda — AI Learning Assistant
 
 A lightweight conversational AI agent with memory, intent detection, and
 optional OpenAI integration. Built as a practical exercise in building AI
@@ -19,8 +19,8 @@ agents in Python.
 ## Installation
 
 ```bash
-git clone https://github.com/<your-username>/nova-agent.git
-cd nova-agent
+git clone https://github.com/<your-username>/panda-agent.git
+cd panda-agent
 python -m venv .venv
 source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
@@ -38,7 +38,7 @@ cp .env.example .env
 | ------------------- | --------------- | ----------------------------------- |
 | `OPENAI_API_KEY`    | *(empty)*       | API key for real LLM responses      |
 | `MODEL_NAME`        | `gpt-4o-mini`   | OpenAI model to use                 |
-| `AGENT_NAME`        | `Nova`          | Agent display name                  |
+| `AGENT_NAME`        | `Panda`          | Agent display name                  |
 | `AGENT_ROLE`        | `AI learning assistant` | Agent role                     |
 | `MESSAGE_LIMIT_FREE`| `10`            | Messages allowed on the free tier   |
 
@@ -57,7 +57,7 @@ and usage are saved to `memory.json` automatically.
 ## Project structure
 
 ```
-nova-agent/
+panda-agent/
 ├── main.py        # Entry point
 ├── agent.py       # Agent class, access control, conversation loop
 ├── config.py      # Settings loaded from environment variables

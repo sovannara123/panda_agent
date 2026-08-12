@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-AGENT_NAME = os.getenv("AGENT_NAME", "Nova")
+AGENT_NAME = os.getenv("AGENT_NAME", "Panda")
 AGENT_ROLE = os.getenv("AGENT_ROLE", "AI learning assistant")
 AGENT_VERSION = os.getenv("AGENT_VERSION", "1.0")
 
