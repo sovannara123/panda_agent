@@ -1,3 +1,7 @@
+import logging
+
+logging.basicConfig(level=logging.INFO)
+
 from agent import Agent
 
 
@@ -26,4 +30,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main()     

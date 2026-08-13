@@ -1,6 +1,9 @@
 import json
+import logging
 from copy import deepcopy
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 MEMORY_FILE = Path(__file__).with_name("memory.json")
 
@@ -16,7 +19,8 @@ def load_memory():
         return deepcopy(DEFAULT_MEMORY)
     try:
         data = json.loads(MEMORY_FILE.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Failed to load memory file, starting fresh: %s", exc)
         return deepcopy(DEFAULT_MEMORY)
     memory = deepcopy(DEFAULT_MEMORY)
     memory.update(data)

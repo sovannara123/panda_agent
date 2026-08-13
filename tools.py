@@ -1,7 +1,10 @@
+
 PRODUCTS = {
     "laptop": 999,
     "phone": 699,
-    "headphones": 99
+    "headphones": 99,
+    "tablet": 399,
+    "mouse": 25
 }
 
 ORDERS = {
@@ -9,6 +12,37 @@ ORDERS = {
     "A101": "processing",
     "A102": "delivered"
 }
+WEATHER = {
+    "bangkok": "sunny",
+    "tokyo": "rainy",
+    "london": "cloudy"
+}
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class UnknownToolError(Exception):
+    def __init__(self, tool_name):
+        self.tool_name = tool_name
+        super().__init__(f"Unknown tool: {tool_name}")
+
+
+class ToolArgumentError(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+         
+def get_weather(city):
+    key = city.lower()
+
+    if key not in WEATHER:
+        return {"error": f"Weather information for '{city}' not available."}
+
+    return {
+        "city": key,
+        "weather": WEATHER[key]
+    }
+
 
 def plan_tool_call(message):
     msg = message.lower()
@@ -30,6 +64,15 @@ def plan_tool_call(message):
                     "tool": "check_order_status",
                     "arguments": {
                         "order_id": order_id
+                    }
+                }
+    if"weather" in msg:
+        for city in WEATHER:
+            if city in msg:
+                return {
+                    "tool": "get_weather",
+                    "arguments": {
+                        "city": city
                     }
                 }
 
@@ -60,7 +103,8 @@ def check_order_status(order_id):
 
 tool_registry = {
     "get_product_price": get_product_price,
-    "check_order_status": check_order_status
+    "check_order_status": check_order_status, 
+    "get_weather": get_weather
 }
 def execute_tool(tool_call):
     if not isinstance(tool_call, dict):
@@ -72,13 +116,10 @@ def execute_tool(tool_call):
     tool_name = tool_call.get("tool")
     arguments = tool_call.get("arguments", {})
 
-    if tool_name not in tool_registry:
-        return {
-            "status": "error",
-            "message": f"Unknown tool: {tool_name}"
-        }
-
     try:
+        if tool_name not in tool_registry:
+            raise UnknownToolError(tool_name)
+
         result = tool_registry[tool_name](**arguments)
 
         if isinstance(result, dict) and "error" in result:
@@ -92,13 +133,22 @@ def execute_tool(tool_call):
             "result": result
         }
 
+    except UnknownToolError as exc:
+        logger.warning("Unknown tool: %s", exc.tool_name)
+        return {
+            "status": "error",
+            "message": str(exc)
+        }
+
     except TypeError as exc:
+        logger.warning("Invalid tool arguments: %s", exc)
         return {
             "status": "error",
             "message": f"Invalid tool arguments: {exc}"
         }
 
     except Exception as exc:
+        logger.exception("Tool %s failed", tool_name)
         return {
             "status": "error",
             "message": f"Tool failed: {exc}"

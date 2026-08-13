@@ -16,4 +16,4 @@ class Config:
     MESSAGE_LIMIT_FREE = int(os.getenv("MESSAGE_LIMIT_FREE", "10"))
     MESSAGE_LIMIT_PREMIUM = None  # None = unlimited
 
-    MAX_HISTORY = 20
+    MAX_HISTORY = 5

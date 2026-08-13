@@ -1,7 +1,11 @@
+import logging
+
 from config import Config
 from storage import MemoryStorage
 from tools import plan_tool_call, execute_tool
 from llm import MockLLMClient, LLMError
+
+logger = logging.getLogger(__name__)
 
 
 class Agent:
@@ -42,6 +46,9 @@ class Agent:
         if tool_call["tool"] == "check_order_status":
             return f"Order {result['order_id']} is {result['order_status']}."
 
+        if tool_call["tool"] == "get_weather":
+            return f"The weather in {result['city']} is {result['weather']}."
+
         return f"Tool result: {result}"
 
     def respond(self, user_input):
@@ -50,7 +57,9 @@ class Agent:
         tool_call = plan_tool_call(user_input)
 
         if tool_call:
+            logger.info("Tool call planned: %s", tool_call)
             tool_result = execute_tool(tool_call)
+            logger.info("Tool result: %s", tool_result)
             response = self.create_tool_response(tool_call, tool_result)
         else:
             try:
@@ -59,6 +68,7 @@ class Agent:
                 response = llm_output["reply"]
 
             except LLMError:
+                logger.exception("LLM generation failed")
                 response = "Sorry, I encountered an error while generating a response."
 
         self.add_message("assistant", response)
