@@ -28,3 +28,13 @@ def save_memory(memory):
         json.dumps(memory, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
+
+
+class MemoryStorage:
+    def load(self):
+        return load_memory()["conversation"]
+
+    def save(self, messages):
+        memory = load_memory()
+        memory["conversation"] = messages
+        save_memory(memory)
