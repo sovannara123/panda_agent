@@ -1,16 +1,19 @@
-from openai import OpenAI
+class LLMError(Exception):
+    pass
 
-from config import API_KEY, MODEL_NAME
 
+class MockLLMClient:
+    def __init__(self, model_name="mock-model"):
+        self.model_name = model_name
 
-def generate_response(messages):
-    if not API_KEY:
-        return None
+    def generate(self, prompt):
+        if not prompt or not prompt.strip():
+            raise LLMError("Prompt cannot be empty.")
 
-    client = OpenAI(api_key=API_KEY)
-    completion = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=messages,
-        temperature=0.7,
-    )
-    return completion.choices[0].message.content
+        if "crash" in prompt.lower():
+            raise LLMError("Simulated LLM API crash.")
+
+        return {
+            "model": self.model_name,
+            "reply": f"[Mock LLM] I received your request."
+        }

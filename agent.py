@@ -1,44 +1,66 @@
-from config import AGENT_NAME, MESSAGE_LIMIT_FREE
-from llm import generate_response
-from storage import load_memory, save_memory
-from tools import get_intent, get_response
+from config import Config
+from storage import MemoryStorage
+from tools import plan_tool_call, execute_tool
+from llm import MockLLMClient, LLMError
 
 
 class Agent:
     def __init__(self):
-        self.memory = load_memory()
+        self.name = Config.AGENT_NAME
+        self.storage = MemoryStorage()
+        self.llm = MockLLMClient(Config.MODEL_NAME)
+        self.memory = self.storage.load()
 
-    def check_access(self):
-        if self.memory["user_plan"] == "premium":
-            return True
-        return self.memory["message_used"] < MESSAGE_LIMIT_FREE
+    def add_message(self, role, content):
+        self.memory.append({
+            "role": role,
+            "content": content
+        })
 
-    def respond(self, user_msg):
-        intent = get_intent(user_msg)
+        self.memory = self.memory[-Config.MAX_HISTORY:]
+        self.storage.save(self.memory)
 
-        self.memory["conversation"].append({"role": "user", "content": user_msg})
+    def build_prompt(self, user_input):
+        recent_messages = self.memory[-5:]
 
-        response = generate_response(self.memory["conversation"])
-        if response is None:
-            response = get_response(intent)
+        history_text = "\n".join([
+            f"{item['role']}: {item['content']}"
+            for item in recent_messages
+        ])
 
-        self.memory["conversation"].append({"role": "assistant", "content": response})
-        self.memory["message_used"] += 1
+        return f"Conversation history:\n{history_text}\n\nuser: {user_input}"
+
+    def create_tool_response(self, tool_call, tool_result):
+        if tool_result.get("status") != "success":
+            return f"Sorry, the tool failed: {tool_result.get('message', 'Unknown error')}"
+
+        result = tool_result["result"]
+
+        if tool_call["tool"] == "get_product_price":
+            return f"The price of {result['product']} is ${result['price']}."
+
+        if tool_call["tool"] == "check_order_status":
+            return f"Order {result['order_id']} is {result['order_status']}."
+
+        return f"Tool result: {result}"
+
+    def respond(self, user_input):
+        self.add_message("user", user_input)
+
+        tool_call = plan_tool_call(user_input)
+
+        if tool_call:
+            tool_result = execute_tool(tool_call)
+            response = self.create_tool_response(tool_call, tool_result)
+        else:
+            try:
+                prompt = self.build_prompt(user_input)
+                llm_output = self.llm.generate(prompt)
+                response = llm_output["reply"]
+
+            except LLMError:
+                response = "Sorry, I encountered an error while generating a response."
+
+        self.add_message("assistant", response)
 
         return response
-
-    def run(self):
-        print(f"Hello, I am {AGENT_NAME}. How can I help you?")
-        while True:
-            user_msg = input("You: ").strip()
-            if user_msg.lower() in ("quit", "exit"):
-                print("Goodbye!")
-                break
-            if not self.check_access():
-                print("System: Message limit reached.")
-                break
-
-            response = self.respond(user_msg)
-            print(f"{AGENT_NAME}: {response}")
-
-        save_memory(self.memory)
