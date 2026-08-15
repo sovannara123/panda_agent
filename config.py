@@ -11,6 +11,8 @@ class Config:
     AGENT_VERSION = os.getenv("AGENT_VERSION", "1.0")
 
     API_KEY = os.getenv("OPENAI_API_KEY")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "mock")
     MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")
 
     MESSAGE_LIMIT_FREE = int(os.getenv("MESSAGE_LIMIT_FREE", "10"))
