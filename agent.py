@@ -52,14 +52,22 @@ class Agent:
 
         return f"Tool result: {result}"
 
+    def check_usage_limit(self):
+        plan = self.metadata.get("user_plan", "free")
+        limit = None if plan == "premium" else Config.MESSAGE_LIMIT_FREE
+
+        if limit is not None and self.metadata.get("messages_used", 0) >= limit:
+            logger.warning("Usage limit reached: %s (%s plan)", limit, plan)
+            return f"Usage limit reached ({limit} msgs for {plan} plan). Please upgrade."
+
+        return None
+
     def respond(self, user_input):
         logger.info("User message received: %s", user_input)
 
-        limit = None if self.metadata.get("user_plan") == "premium" else Config.MESSAGE_LIMIT_FREE
-
-        if limit is not None and self.metadata.get("messages_used", 0) >= limit:
-            logger.warning("Free message limit reached: %s", limit)
-            return "You've reached the free message limit. Upgrade to continue."
+        limit_error = self.check_usage_limit()
+        if limit_error:
+            return limit_error
 
         self.metadata["messages_used"] = self.metadata.get("messages_used", 0) + 1
         self.storage.save_metadata(self.metadata)
