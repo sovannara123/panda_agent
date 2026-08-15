@@ -34,8 +34,8 @@ For context beyond the window:
 
 ChatGPT's "Memory" stores explicit facts (name, location, preferences) in a
 **structured store keyed by user_id** — not in the chat log. Panda's
-`memory.json` `user_plan` / `message_used` fields are a primitive version of
-this (per-user metadata).
+`memory.json` conversation history / `user_meta.json` `user_plan` /
+`messages_used` fields are a primitive version of this (per-user metadata).
 
 ## 6. Server-side storage + sessions
 

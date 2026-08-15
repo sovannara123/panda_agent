@@ -8,7 +8,8 @@ agents in Python.
 
 - Rule-based intent detection (`tools.py`) with local fallback responses
 - Optional real LLM responses via the OpenAI API (`llm.py`)
-- Persistent conversation memory stored in `memory.json` (`storage.py`)
+- Persistent conversation memory stored in `memory.json` and user metadata in
+  `user_meta.json` (`storage.py`)
 - Free / premium access tiers with a message limit (`agent.py`)
 
 ## Requirements
@@ -52,7 +53,23 @@ python main.py
 ```
 
 Start chatting. Type `quit` or `exit` to end the session. Conversation history
-and usage are saved to `memory.json` automatically.
+is saved to `memory.json` and user metadata (plan, message usage) to
+`user_meta.json` automatically. Free-tier users are limited to
+`MESSAGE_LIMIT_FREE` messages; hitting the limit returns an "upgrade" message
+and the blocked turn is neither counted nor stored.
+
+### Resetting usage / testing the rate limit
+
+Both files are runtime state and gitignored. To reset for testing:
+
+```bash
+rm user_meta.json memory.json   # next run starts fresh
+# or just reset the counter
+echo '{"user_plan": "free", "messages_used": 0}' > user_meta.json
+```
+
+To see the limit fire, set `MESSAGE_LIMIT_FREE` low in `.env` (e.g. `3`) or
+send more messages than the default 10.
 
 ## Project structure
 
@@ -63,7 +80,7 @@ panda-agent/
 ├── config.py      # Settings loaded from environment variables
 ├── tools.py       # Intent detection + local fallback responses
 ├── llm.py         # Optional OpenAI chat completions
-├── storage.py     # Persist and reload conversation memory
+├── storage.py     # Persist messages + user metadata in separate stores
 └── .env.example   # Example environment configuration
 ```
 

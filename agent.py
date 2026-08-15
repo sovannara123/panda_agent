@@ -13,7 +13,8 @@ class Agent:
         self.name = Config.AGENT_NAME
         self.storage = MemoryStorage()
         self.llm = create_llm_client()
-        self.memory = self.storage.load()
+        self.memory = self.storage.load_messages()
+        self.metadata = self.storage.load_metadata()
 
     def add_message(self, role, content):
         self.memory.append({
@@ -22,7 +23,7 @@ class Agent:
         })
 
         self.memory = self.memory[-Config.MAX_HISTORY:]
-        self.storage.save(self.memory)
+        self.storage.save_messages(self.memory)
 
     def build_prompt(self, user_input):
         recent_messages = self.memory[-5:]
@@ -53,6 +54,16 @@ class Agent:
 
     def respond(self, user_input):
         logger.info("User message received: %s", user_input)
+
+        limit = None if self.metadata.get("user_plan") == "premium" else Config.MESSAGE_LIMIT_FREE
+
+        if limit is not None and self.metadata.get("messages_used", 0) >= limit:
+            logger.warning("Free message limit reached: %s", limit)
+            return "You've reached the free message limit. Upgrade to continue."
+
+        self.metadata["messages_used"] = self.metadata.get("messages_used", 0) + 1
+        self.storage.save_metadata(self.metadata)
+
         self.add_message("user", user_input)
 
         tool_call = plan_tool_call(user_input)

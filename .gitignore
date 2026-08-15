@@ -12,6 +12,7 @@ build/
 
 # Runtime data
 memory.json
+user_meta.json
 
 # Editor / OS
 .DS_Store
