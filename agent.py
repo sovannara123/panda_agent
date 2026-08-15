@@ -3,7 +3,7 @@ import logging
 from config import Config
 from storage import MemoryStorage
 from tools import plan_tool_call, execute_tool
-from llm import MockLLMClient, LLMError
+from llm import create_llm_client, LLMError
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +12,7 @@ class Agent:
     def __init__(self):
         self.name = Config.AGENT_NAME
         self.storage = MemoryStorage()
-        self.llm = MockLLMClient(Config.MODEL_NAME)
+        self.llm = create_llm_client()
         self.memory = self.storage.load()
 
     def add_message(self, role, content):
@@ -52,14 +52,18 @@ class Agent:
         return f"Tool result: {result}"
 
     def respond(self, user_input):
+        logger.info("User message received: %s", user_input)
         self.add_message("user", user_input)
 
         tool_call = plan_tool_call(user_input)
 
         if tool_call:
             logger.info("Tool call planned: %s", tool_call)
+            logger.info("Tool used: %s", tool_call["tool"])
             tool_result = execute_tool(tool_call)
             logger.info("Tool result: %s", tool_result)
+            if tool_result.get("status") != "success":
+                logger.warning("Tool failed: %s", tool_result.get("message"))
             response = self.create_tool_response(tool_call, tool_result)
         else:
             try:
@@ -69,8 +73,10 @@ class Agent:
 
             except LLMError:
                 logger.exception("LLM generation failed")
+                logger.error("LLM failed")
                 response = "Sorry, I encountered an error while generating a response."
 
         self.add_message("assistant", response)
+        logger.info("Response sent: %s", response)
 
         return response
