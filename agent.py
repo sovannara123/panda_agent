@@ -4,6 +4,8 @@ from config import Config
 from storage import MemoryStorage
 from tools import plan_tool_call, execute_tool, validate_tool_call
 from llm import create_llm_client, LLMError
+from prompts import build_system_prompt, build_user_prompt
+from tool_schemas import TOOL_SCHEMAS
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +17,7 @@ class Agent:
         self.llm = create_llm_client()
         self.memory = self.storage.load_messages()
         self.metadata = self.storage.load_metadata()
+        self.system_prompt = build_system_prompt(self.name, TOOL_SCHEMAS)
 
     def add_message(self, role, content):
         self.memory.append({
@@ -26,14 +29,7 @@ class Agent:
         self.storage.save_messages(self.memory)
 
     def build_prompt(self, user_input):
-        recent_messages = self.memory[-5:]
-
-        history_text = "\n".join([
-            f"{item['role']}: {item['content']}"
-            for item in recent_messages
-        ])
-
-        return f"Conversation history:\n{history_text}\n\nuser: {user_input}"
+        return build_user_prompt(self.memory[-5:], user_input)
 
     def create_tool_response(self, tool_call, tool_result):
         if tool_result.get("status") != "success":
