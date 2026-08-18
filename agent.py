@@ -13,9 +13,9 @@ logger = logging.getLogger(__name__)
 
 
 class Agent:
-    def __init__(self):
+    def __init__(self, storage=None):
         self.name = Config.AGENT_NAME
-        self.storage = MemoryStorage()
+        self.storage = storage or MemoryStorage()
         self.llm = create_llm_client()
         self.memory = self.storage.load_messages()
         self.metadata = self.storage.load_metadata()
