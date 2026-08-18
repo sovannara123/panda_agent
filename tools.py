@@ -1,3 +1,9 @@
+import logging
+import re
+
+from tool_schemas import TOOL_SCHEMAS
+
+logger = logging.getLogger(__name__)
 
 PRODUCTS = {
     "laptop": 999,
@@ -17,9 +23,9 @@ WEATHER = {
     "tokyo": "rainy",
     "london": "cloudy"
 }
-import logging
 
-logger = logging.getLogger(__name__)
+PRICE_KEYWORDS = ["price", "cost", "rate", "how much"]
+ORDER_KEYWORDS = ["order", "status", "track", "where"]
 
 
 class UnknownToolError(Exception):
@@ -45,11 +51,12 @@ def get_weather(city):
 
 
 def plan_tool_call(message):
+    """Schema-aware tool planning with argument extraction."""
     msg = message.lower()
 
-    if "price" in msg:
+    if any(word in msg for word in PRICE_KEYWORDS):
         for product in PRODUCTS:
-            if product in msg:
+            if re.search(rf'\b{re.escape(product)}\b', msg):
                 return {
                     "tool": "get_product_price",
                     "arguments": {
@@ -57,18 +64,20 @@ def plan_tool_call(message):
                     }
                 }
 
-    if "order" in msg:
-        for order_id in ORDERS:
-            if order_id.lower() in msg:
-                return {
-                    "tool": "check_order_status",
-                    "arguments": {
-                        "order_id": order_id
-                    }
+    order_match = re.search(r'\b[aA]\d{3}\b', message)
+    if order_match and any(word in msg for word in ORDER_KEYWORDS):
+        order_id = order_match.group().upper()
+        if order_id in ORDERS:
+            return {
+                "tool": "check_order_status",
+                "arguments": {
+                    "order_id": order_id
                 }
-    if"weather" in msg:
+            }
+
+    if "weather" in msg:
         for city in WEATHER:
-            if city in msg:
+            if re.search(rf'\b{re.escape(city)}\b', msg):
                 return {
                     "tool": "get_weather",
                     "arguments": {
@@ -76,7 +85,33 @@ def plan_tool_call(message):
                     }
                 }
 
+    if any(word in msg for word in ORDER_KEYWORDS):
+        return {
+            "tool": "check_order_status",
+            "arguments": {}
+        }
+
     return None
+
+
+def validate_tool_call(tool_call):
+    """Validate tool call against schema before execution."""
+    if not isinstance(tool_call, dict):
+        return False
+
+    tool_name = tool_call.get("tool")
+    if tool_name not in TOOL_SCHEMAS:
+        return False
+
+    schema = TOOL_SCHEMAS[tool_name]
+    args = tool_call.get("arguments", {})
+
+    required = schema["parameters"].get("required", [])
+    for param in required:
+        if param not in args or not str(args[param]).strip():
+            return False
+
+    return True
 def get_product_price(product_name):
     key = product_name.lower()
 

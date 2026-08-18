@@ -2,7 +2,7 @@ import logging
 
 from config import Config
 from storage import MemoryStorage
-from tools import plan_tool_call, execute_tool
+from tools import plan_tool_call, execute_tool, validate_tool_call
 from llm import create_llm_client, LLMError
 
 logger = logging.getLogger(__name__)
@@ -77,6 +77,11 @@ class Agent:
         tool_call = plan_tool_call(user_input)
 
         if tool_call:
+            if not validate_tool_call(tool_call):
+                response = "I understood you want to use a tool, but the arguments were invalid. Please be more specific."
+                self.add_message("assistant", response)
+                return response
+
             logger.info("Tool call planned: %s", tool_call)
             logger.info("Tool used: %s", tool_call["tool"])
             tool_result = execute_tool(tool_call)
