@@ -1,4 +1,5 @@
 import logging
+import time
 
 from config import Config
 from storage import MemoryStorage
@@ -6,6 +7,7 @@ from tools import plan_tool_call, execute_tool, validate_tool_call
 from llm import create_llm_client, LLMError
 from prompts import build_system_prompt, build_user_prompt
 from tool_schemas import TOOL_SCHEMAS
+from logger import log_tool_call, log_llm_call, log_usage_check
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +61,15 @@ class Agent:
         return None
 
     def respond(self, user_input):
-        logger.info("User message received: %s", user_input)
-
         limit_error = self.check_usage_limit()
+        plan = self.metadata.get("user_plan", "free")
+        limit = None if plan == "premium" else Config.MESSAGE_LIMIT_FREE
+        log_usage_check(
+            plan,
+            self.metadata.get("messages_used", 0),
+            limit,
+            limit_error is not None
+        )
         if limit_error:
             return limit_error
 
@@ -78,10 +86,15 @@ class Agent:
                 self.add_message("assistant", response)
                 return response
 
-            logger.info("Tool call planned: %s", tool_call)
-            logger.info("Tool used: %s", tool_call["tool"])
+            start = time.time()
             tool_result = execute_tool(tool_call)
-            logger.info("Tool result: %s", tool_result)
+            duration = (time.time() - start) * 1000
+            log_tool_call(
+                tool_call["tool"],
+                tool_call["arguments"],
+                tool_result.get("status") == "success",
+                duration
+            )
             if tool_result.get("status") != "success":
                 logger.warning("Tool failed: %s", tool_result.get("message"))
             response = self.create_tool_response(tool_call, tool_result)
@@ -89,14 +102,14 @@ class Agent:
             try:
                 prompt = self.build_prompt(user_input)
                 llm_output = self.llm.generate(prompt)
+                log_llm_call(self.llm.model_name, True)
                 response = llm_output["reply"]
 
-            except LLMError:
+            except LLMError as exc:
+                log_llm_call(self.llm.model_name, False, str(exc))
                 logger.exception("LLM generation failed")
-                logger.error("LLM failed")
                 response = "Sorry, I encountered an error while generating a response."
 
         self.add_message("assistant", response)
-        logger.info("Response sent: %s", response)
 
         return response
