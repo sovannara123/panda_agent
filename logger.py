@@ -6,7 +6,7 @@ def setup_logging(level=logging.INFO):
     logger = logging.getLogger("agent")
     logger.setLevel(level)
 
-    if not logger.handlers:
+    if not logger.handlers: 
         handler = logging.StreamHandler()
         formatter = logging.Formatter(
             '%(asctime)s | %(levelname)-8s | %(message)s',

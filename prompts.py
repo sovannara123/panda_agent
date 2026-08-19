@@ -19,13 +19,19 @@ Current user message: {user_message}
 Respond according to the system rules."""
 
 
-def format_tool_descriptions(schemas):
+def format_tool_descriptions(tool_schemas: dict) -> str:
     lines = []
-    for name, schema in schemas.items():
-        params = ", ".join(schema["parameters"]["properties"].keys())
-        lines.append(f"- {name}({params}): {schema['description']}")
-    return "\n".join(lines)
 
+    for tool_name, schema in tool_schemas.items():
+        description = schema.get("description", "No description.")
+        parameters = schema.get("parameters", {})
+        properties = parameters.get("properties", {})
+
+        param_names = ", ".join(properties.keys())
+
+        lines.append(f"- {tool_name}({param_names}): {description}")
+
+    return "\n".join(lines)
 
 def build_system_prompt(agent_name, schemas):
     return SYSTEM_PROMPT.format(

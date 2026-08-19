@@ -1,5 +1,5 @@
 import logging
-import time
+import time # used to measure tool execution time
 
 from config import Config
 from storage import MemoryStorage
@@ -61,35 +61,36 @@ class Agent:
         return None
 
     def respond(self, user_input):
-        limit_error = self.check_usage_limit()
-        plan = self.metadata.get("user_plan", "free")
-        limit = None if plan == "premium" else Config.MESSAGE_LIMIT_FREE
-        log_usage_check(
+        limit_error = self.check_usage_limit() # to check the usage limit before processing the user input
+        plan = self.metadata.get("user_plan", "free") # to get the user's plan
+        limit = None if plan == "premium" else Config.MESSAGE_LIMIT_FREE # to get the message limit based on the user's plan
+        log_usage_check( # to log the usage check event
             plan,
             self.metadata.get("messages_used", 0),
             limit,
             limit_error is not None
         )
-        if limit_error:
+        if limit_error: # if the usage limit is reached, return the error message
             return limit_error
 
-        self.metadata["messages_used"] = self.metadata.get("messages_used", 0) + 1
-        self.storage.save_metadata(self.metadata)
+        self.metadata["messages_used"] = self.metadata.get("messages_used", 0) + 1 # to increment the message count
+        self.storage.save_metadata(self.metadata)       # to save the updated metadata
 
         self.add_message("user", user_input)
 
-        tool_call = plan_tool_call(user_input)
+        tool_call = plan_tool_call(user_input) # to plan the tool call based on the user input
 
         if tool_call:
-            if not validate_tool_call(tool_call):
+            if not validate_tool_call(tool_call): 
                 response = "I understood you want to use a tool, but the arguments were invalid. Please be more specific."
-                self.add_message("assistant", response)
+                self.add_message("assistant", response) # to add the assistant's response to the memory
                 return response
 
-            start = time.time()
-            tool_result = execute_tool(tool_call)
-            duration = (time.time() - start) * 1000
-            log_tool_call(
+
+            start = time.time() # to measure the execution time of the tool call
+            tool_result = execute_tool(tool_call)  # to execute the tool call and get the result 
+            duration = (time.time() - start) * 1000 # to calculate the duration in milliseconds
+            log_tool_call( # to log the tool call event
                 tool_call["tool"],
                 tool_call["arguments"],
                 tool_result.get("status") == "success",

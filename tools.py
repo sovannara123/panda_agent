@@ -148,7 +148,7 @@ def execute_tool(tool_call):
             "message": "Tool call must be a dictionary."
         }
 
-    tool_name = tool_call.get("tool")
+    tool_name = tool_call.get("tool") 
     arguments = tool_call.get("arguments", {})
 
     try:
@@ -176,15 +176,16 @@ def execute_tool(tool_call):
         }
 
     except TypeError as exc:
-        logger.warning("Invalid tool arguments: %s", exc)
+        logger.warning("Invalid tool arguments: %s", exc) 
         return {
             "status": "error",
             "message": f"Invalid tool arguments: {exc}"
         }
-
+            
     except Exception as exc:
         logger.exception("Tool %s failed", tool_name)
         return {
             "status": "error",
             "message": f"Tool failed: {exc}"
         }
+    

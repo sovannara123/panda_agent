@@ -1,11 +1,12 @@
 import pytest
 
 from agent import Agent
+from config import Config
 from storage import MemoryStorage
 from tools import validate_tool_call, plan_tool_call
 
 
-@pytest.fixture
+@pytest.fixture 
 def agent(tmp_path):
     """Fresh agent backed by temp storage for each test."""
     return Agent(storage=MemoryStorage(
@@ -37,10 +38,59 @@ class TestAgentResponses:
         assert "$699" in response
 
     def test_usage_limit_blocks(self, agent):
-        agent.metadata["messages_used"] = 10
+        agent.metadata["messages_used"] = Config.MESSAGE_LIMIT_FREE
         response = agent.respond("hello")
         assert "limit" in response.lower()
-        assert agent.metadata["messages_used"] == 10
+        assert agent.metadata["messages_used"] == Config.MESSAGE_LIMIT_FREE
+
+
+class TestUsageLimit:
+    def test_at_limit_blocks(self, agent):
+        agent.metadata["messages_used"] = Config.MESSAGE_LIMIT_FREE
+        response = agent.respond("hello")
+        assert "limit" in response.lower()
+        assert agent.metadata["messages_used"] == Config.MESSAGE_LIMIT_FREE
+
+    def test_above_limit_blocks(self, agent):
+        agent.metadata["messages_used"] = Config.MESSAGE_LIMIT_FREE + 1
+        response = agent.respond("hello")
+        assert "limit" in response.lower()
+        assert agent.metadata["messages_used"] == Config.MESSAGE_LIMIT_FREE + 1
+
+    def test_below_limit_allowed_and_increments(self, agent):
+        agent.metadata["messages_used"] = Config.MESSAGE_LIMIT_FREE - 1
+        response = agent.respond("hello")
+        assert "limit" not in response.lower()
+        assert agent.metadata["messages_used"] == Config.MESSAGE_LIMIT_FREE
+
+    def test_custom_limit_from_config(self, agent, monkeypatch):
+        monkeypatch.setattr(Config, "MESSAGE_LIMIT_FREE", 3)
+        agent.metadata["messages_used"] = 2
+        response = agent.respond("hello")
+        assert "limit" not in response.lower()
+        assert agent.metadata["messages_used"] == 3
+
+        response = agent.respond("hello")
+        assert "limit" in response.lower()
+        assert agent.metadata["messages_used"] == 3
+
+    def test_blocked_turn_not_stored(self, agent):
+        agent.metadata["messages_used"] = Config.MESSAGE_LIMIT_FREE
+        agent.respond("hello")
+        assert agent.storage.load_messages() == []
+
+    def test_premium_unlimited(self, agent):
+        agent.metadata["user_plan"] = "premium"
+        agent.metadata["messages_used"] = 10**5
+        response = agent.respond("hello")
+        assert "limit" not in response.lower()
+        assert agent.metadata["messages_used"] == 10**5 + 1
+
+    def test_unknown_plan_defaults_to_free(self, agent):
+        agent.metadata["user_plan"] = "enterprise"
+        agent.metadata["messages_used"] = Config.MESSAGE_LIMIT_FREE
+        response = agent.respond("hello")
+        assert "limit" in response.lower()
 
 
 class TestMemory:
