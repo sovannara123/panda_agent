@@ -1,38 +1,28 @@
 # Logging Events
 
-Total log events implemented: **15** across 4 modules.
+Structured JSON events emitted by `logger.py` and fired from `agent.py`.
 
-## agent.py (8)
+## Structured events (logger.py → agent.py)
 
-| Event | Level | Location |
-| ----- | ----- | -------- |
-| User message received | INFO | `respond()` |
-| Tool call planned | INFO | `respond()` |
-| Tool used | INFO | `respond()` |
-| Tool result | INFO | `respond()` |
-| Tool failed | WARNING | `respond()` |
-| LLM generation failed | ERROR (exception) | `except LLMError` |
-| LLM failed | ERROR | `except LLMError` |
-| Response sent | INFO | `respond()` |
+| Event | Fired when | Location |
+| ----- | ---------- | -------- |
+| `user_input` | user message received | `respond()` entry |
+| `usage_check` | every turn, guardrail check | `respond()` |
+| `usage_blocked` | free-tier limit reached, turn blocked | `respond()` blocked branch |
+| `tool_planned` | `plan_tool_call()` matched a tool | `respond()` |
+| `tool_call` | tool executed (success + duration) | `respond()` |
+| `tool_failed` | tool returned error status | `respond()` |
+| `llm_call` | LLM attempt, success or error | `respond()` try/except |
+| `response_sent` | reply returned (all paths) | `respond()` |
 
-## tools.py (3)
+## Other logged events (standard logging)
 
-| Event | Level | Location |
-| ----- | ----- | -------- |
-| Unknown tool | WARNING | `execute_tool()` |
-| Invalid tool arguments | WARNING | `execute_tool()` |
-| Tool failed | ERROR (exception) | `execute_tool()` |
-
-## storage.py (1)
-
-| Event | Level | Location |
-| ----- | ----- | -------- |
-| Failed to load memory file | WARNING | `load_memory()` |
-
-## llm.py (3)
-
-| Event | Level | Location |
-| ----- | ----- | -------- |
-| Empty prompt rejected | WARNING | `generate()` |
-| Simulated LLM crash | WARNING | `generate()` |
-| LLM response generated | INFO | `generate()` |
+| Module | Event | Level |
+| ------ | ----- | ----- |
+| `tools.py` | Unknown tool | WARNING |
+| `tools.py` | Invalid tool arguments | WARNING |
+| `tools.py` | Tool failed | ERROR (exception) |
+| `storage.py` | Failed to load memory file | WARNING |
+| `llm.py` | Empty prompt rejected | WARNING |
+| `llm.py` | Simulated LLM crash | WARNING |
+| `llm.py` | LLM response generated | INFO |

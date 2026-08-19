@@ -60,9 +60,14 @@ main.py
 
 | Step                       | Event            | Where fired             |
 | -------------------------- | ---------------- | ----------------------- |
-| Every turn (guardrail)     | `usage_check`    | agent.py:67             |
-| Every tool execution       | `tool_call`      | agent.py:92             |
-| Every LLM attempt          | `llm_call`       | agent.py:105 (success), agent.py:109 (failure) |
+| Every turn (input)         | `user_input`     | agent.py:64            |
+| Every turn (guardrail)     | `usage_check`    | agent.py:68             |
+| Turn blocked by limit      | `usage_blocked`  | agent.py:74             |
+| Every tool planning        | `tool_planned`   | agent.py:85             |
+| Every tool execution       | `tool_call`      | agent.py:96             |
+| Tool failure               | `tool_failed`    | agent.py:102            |
+| Every LLM attempt          | `llm_call`       | agent.py:109 (success), agent.py:113 (failure) |
+| Every reply                | `response_sent`  | agent.py:75/89/119      |
 
 ## Example walkthrough — `"price of phone"`
 

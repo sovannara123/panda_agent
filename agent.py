@@ -7,7 +7,7 @@ from tools import plan_tool_call, execute_tool, validate_tool_call
 from llm import create_llm_client, LLMError
 from prompts import build_system_prompt, build_user_prompt
 from tool_schemas import TOOL_SCHEMAS
-from logger import log_tool_call, log_llm_call, log_usage_check
+from logger import log_user_input, log_tool_planned, log_tool_call, log_tool_failed, log_llm_call, log_usage_check, log_usage_blocked, log_response
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,7 @@ class Agent:
         return None
 
     def respond(self, user_input):
+        log_user_input(user_input)
         limit_error = self.check_usage_limit() # to check the usage limit before processing the user input
         plan = self.metadata.get("user_plan", "free") # to get the user's plan
         limit = None if plan == "premium" else Config.MESSAGE_LIMIT_FREE # to get the message limit based on the user's plan
@@ -71,6 +72,8 @@ class Agent:
             limit_error is not None
         )
         if limit_error: # if the usage limit is reached, return the error message
+            log_usage_blocked(plan, self.metadata.get("messages_used", 0), limit)
+            log_response(limit_error)
             return limit_error
 
         self.metadata["messages_used"] = self.metadata.get("messages_used", 0) + 1 # to increment the message count
@@ -79,11 +82,12 @@ class Agent:
         self.add_message("user", user_input)
 
         tool_call = plan_tool_call(user_input) # to plan the tool call based on the user input
-
         if tool_call:
+            log_tool_planned(tool_call)
             if not validate_tool_call(tool_call): 
                 response = "I understood you want to use a tool, but the arguments were invalid. Please be more specific."
                 self.add_message("assistant", response) # to add the assistant's response to the memory
+                log_response(response)
                 return response
 
 
@@ -97,6 +101,7 @@ class Agent:
                 duration
             )
             if tool_result.get("status") != "success":
+                log_tool_failed(tool_call["tool"], tool_result.get("message"))
                 logger.warning("Tool failed: %s", tool_result.get("message"))
             response = self.create_tool_response(tool_call, tool_result)
         else:
@@ -113,4 +118,5 @@ class Agent:
 
         self.add_message("assistant", response)
 
+        log_response(response)
         return response
