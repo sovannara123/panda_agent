@@ -13,6 +13,7 @@ Structured JSON events emitted by `logger.py` and fired from `agent.py`.
 | `tool_call` | tool executed (success + duration) | `respond()` |
 | `tool_failed` | tool returned error status | `respond()` |
 | `llm_call` | LLM attempt, success or error | `respond()` try/except |
+| `fallback` | fallback response used (usage limit, invalid tool, tool failed, LLM error) | `respond()` |
 | `response_sent` | reply returned (all paths) | `respond()` |
 
 ## Other logged events (standard logging)

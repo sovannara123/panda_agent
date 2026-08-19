@@ -67,6 +67,7 @@ main.py
 | Every tool execution       | `tool_call`      | agent.py:96             |
 | Tool failure               | `tool_failed`    | agent.py:102            |
 | Every LLM attempt          | `llm_call`       | agent.py:109 (success), agent.py:113 (failure) |
+| Fallback response used     | `fallback`       | agent.py:39/78/93/122 |
 | Every reply                | `response_sent`  | agent.py:75/89/119      |
 
 ## Example walkthrough — `"price of phone"`

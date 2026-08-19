@@ -1,7 +1,10 @@
+import logging
+
 import pytest
 
 from agent import Agent
 from config import Config
+from logger import log
 from storage import MemoryStorage
 from tools import validate_tool_call, plan_tool_call
 
@@ -98,3 +101,30 @@ class TestMemory:
         agent.respond("test message")
         reloaded = agent.storage.load_messages()
         assert any(m["content"] == "test message" for m in reloaded)
+
+
+class TestFallbackLogging:
+    def _fallback_messages(self, caplog):
+        return list(dict.fromkeys(
+            r.getMessage()
+            for r in caplog.records
+            if '"event": "fallback"' in r.getMessage()
+        ))
+
+    def test_fallback_logged_on_usage_limit(self, agent, caplog, monkeypatch):
+        monkeypatch.setattr(log, "propagate", True)
+        caplog.set_level(logging.INFO, logger="agent")
+        agent.metadata["messages_used"] = Config.MESSAGE_LIMIT_FREE
+        agent.respond("hello")
+        messages = self._fallback_messages(caplog)
+        assert len(messages) == 1
+        assert "usage_limit" in messages[0]
+
+    def test_fallback_logged_on_llm_error(self, agent, caplog, monkeypatch):
+        monkeypatch.setattr(log, "propagate", True)
+        caplog.set_level(logging.INFO, logger="agent")
+        response = agent.respond("crash")
+        assert "unavailable" in response.lower()
+        messages = self._fallback_messages(caplog)
+        assert len(messages) == 1
+        assert "llm_error" in messages[0]

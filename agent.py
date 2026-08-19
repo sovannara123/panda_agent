@@ -7,7 +7,8 @@ from tools import plan_tool_call, execute_tool, validate_tool_call
 from llm import create_llm_client, LLMError
 from prompts import build_system_prompt, build_user_prompt
 from tool_schemas import TOOL_SCHEMAS
-from logger import log_user_input, log_tool_planned, log_tool_call, log_tool_failed, log_llm_call, log_usage_check, log_usage_blocked, log_response
+from logger import log_user_input, log_tool_planned, log_tool_call, log_tool_failed, log_llm_call, log_usage_check, log_usage_blocked, log_response, log_fallback
+from fallback import get_fallback_response
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,12 @@ class Agent:
 
     def create_tool_response(self, tool_call, tool_result):
         if tool_result.get("status") != "success":
-            return f"Sorry, the tool failed: {tool_result.get('message', 'Unknown error')}"
+            message = get_fallback_response(
+                "tool_failed",
+                details=tool_result.get("message")
+            )
+            log_fallback("tool_failed", message)
+            return message
 
         result = tool_result["result"]
 
@@ -56,7 +62,10 @@ class Agent:
 
         if limit is not None and self.metadata.get("messages_used", 0) >= limit:
             logger.warning("Usage limit reached: %s (%s plan)", limit, plan)
-            return f"Usage limit reached ({limit} msgs for {plan} plan). Please upgrade."
+            return get_fallback_response(
+                "usage_limit",
+                details=f"{limit} msgs for {plan} plan"
+            )
 
         return None
 
@@ -73,6 +82,7 @@ class Agent:
         )
         if limit_error: # if the usage limit is reached, return the error message
             log_usage_blocked(plan, self.metadata.get("messages_used", 0), limit)
+            log_fallback("usage_limit", limit_error)
             log_response(limit_error)
             return limit_error
 
@@ -85,8 +95,9 @@ class Agent:
         if tool_call:
             log_tool_planned(tool_call)
             if not validate_tool_call(tool_call): 
-                response = "I understood you want to use a tool, but the arguments were invalid. Please be more specific."
+                response = get_fallback_response("invalid_tool")
                 self.add_message("assistant", response) # to add the assistant's response to the memory
+                log_fallback("invalid_tool_call", response) 
                 log_response(response)
                 return response
 
@@ -114,7 +125,8 @@ class Agent:
             except LLMError as exc:
                 log_llm_call(self.llm.model_name, False, str(exc))
                 logger.exception("LLM generation failed")
-                response = "Sorry, I encountered an error while generating a response."
+                response = get_fallback_response("llm_unavailable")
+                log_fallback("llm_error", response)
 
         self.add_message("assistant", response)
 

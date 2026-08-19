@@ -97,3 +97,10 @@ def log_response(response: str):
     log_event("response_sent", {
         "response": response
     })
+
+
+def log_fallback(reason: str, message: str):
+    log_event("fallback", {
+        "reason": reason,
+        "message": message
+    }) 
