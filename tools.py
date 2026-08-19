@@ -50,9 +50,20 @@ def get_weather(city):
     }
 
 
+def test_failure():
+    """A test tool that always fails, to verify graceful degradation."""
+    return {"error": "Simulated failure for testing graceful degradation."}
+
+
 def plan_tool_call(message):
     """Schema-aware tool planning with argument extraction."""
     msg = message.lower()
+
+    if "test failure" in msg or "simulate failure" in msg:
+        return {
+            "tool": "test_failure",
+            "arguments": {}
+        }
 
     if any(word in msg for word in PRICE_KEYWORDS):
         for product in PRODUCTS:
@@ -139,7 +150,8 @@ def check_order_status(order_id):
 tool_registry = {
     "get_product_price": get_product_price,
     "check_order_status": check_order_status, 
-    "get_weather": get_weather
+    "get_weather": get_weather,
+    "test_failure": test_failure
 }
 def execute_tool(tool_call):
     if not isinstance(tool_call, dict):

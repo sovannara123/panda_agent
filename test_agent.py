@@ -6,7 +6,7 @@ from agent import Agent
 from config import Config
 from logger import log
 from storage import MemoryStorage
-from tools import validate_tool_call, plan_tool_call
+from tools import validate_tool_call, plan_tool_call, execute_tool
 
 
 @pytest.fixture 
@@ -128,3 +128,36 @@ class TestFallbackLogging:
         messages = self._fallback_messages(caplog)
         assert len(messages) == 1
         assert "llm_error" in messages[0]
+
+    def test_fallback_logged_on_tool_failure(self, agent, caplog, monkeypatch):
+        monkeypatch.setattr(log, "propagate", True)
+        caplog.set_level(logging.INFO, logger="agent")
+        response = agent.respond("simulate failure")
+        assert "action failed" in response.lower()
+        messages = self._fallback_messages(caplog)
+        assert len(messages) == 1
+        assert "tool_failed" in messages[0]
+
+
+class TestFailureTool:
+    def test_plan_simulate_failure(self):
+        call = plan_tool_call("simulate failure now")
+        assert call is not None
+        assert call["tool"] == "test_failure"
+        assert validate_tool_call(call)
+
+    def test_plan_test_failure_keyword(self):
+        call = plan_tool_call("test failure please")
+        assert call is not None
+        assert call["tool"] == "test_failure"
+
+    def test_test_failure_tool_always_fails(self):
+        call = plan_tool_call("test failure")
+        result = execute_tool(call)
+        assert result["status"] == "error"
+        assert "degradation" in result["message"]
+
+    def test_agent_graceful_fallback(self, agent):
+        response = agent.respond("simulate failure")
+        assert "action failed" in response.lower()
+        assert "degradation" in response.lower()

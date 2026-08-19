@@ -40,5 +40,14 @@ TOOL_SCHEMAS = {
             },
             "required": ["city"]
         }
+    },
+    "test_failure": {
+        "name": "test_failure",
+        "description": "A test tool that always fails, used to verify graceful degradation",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
     }
 }
