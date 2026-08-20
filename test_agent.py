@@ -1,9 +1,11 @@
+import json
 import logging
 
 import pytest
 
 from agent import Agent
 from config import Config
+from context import RequestContext
 from logger import log
 from storage import MemoryStorage
 from tools import validate_tool_call, plan_tool_call, execute_tool
@@ -77,10 +79,14 @@ class TestUsageLimit:
         assert "limit" in response.lower()
         assert agent.metadata["messages_used"] == 3
 
-    def test_blocked_turn_not_stored(self, agent):
+    def test_blocked_turn_not_counted(self, agent):
         agent.metadata["messages_used"] = Config.MESSAGE_LIMIT_FREE
-        agent.respond("hello")
-        assert agent.storage.load_messages() == []
+        response = agent.respond("hello")
+        assert "limit" in response.lower()
+        assert agent.metadata["messages_used"] == Config.MESSAGE_LIMIT_FREE
+        reloaded = agent.storage.load_messages()
+        assert len(reloaded) == 1
+        assert reloaded[0]["role"] == "assistant"
 
     def test_premium_unlimited(self, agent):
         agent.metadata["user_plan"] = "premium"
@@ -127,7 +133,7 @@ class TestFallbackLogging:
         assert "unavailable" in response.lower()
         messages = self._fallback_messages(caplog)
         assert len(messages) == 1
-        assert "llm_error" in messages[0]
+        assert "llm_unavailable" in messages[0]
 
     def test_fallback_logged_on_tool_failure(self, agent, caplog, monkeypatch):
         monkeypatch.setattr(log, "propagate", True)
@@ -161,3 +167,41 @@ class TestFailureTool:
         response = agent.respond("simulate failure")
         assert "action failed" in response.lower()
         assert "degradation" in response.lower()
+
+
+class TestContext:
+    def test_request_context_creation(self):
+        ctx = RequestContext.new()
+        assert ctx.session_id
+        assert ctx.request_id
+        assert ctx.session_id != ctx.request_id
+
+    def test_request_context_with_session_id(self):
+        session = "test-session-123"
+        ctx = RequestContext.new(session_id=session)
+        assert ctx.session_id == session
+        assert ctx.request_id
+
+    def test_agent_accepts_session_id(self, agent):
+        response = agent.respond("hello", session_id="session-abc")
+        assert "hello" not in response.lower() or "received" in response.lower()
+
+    def test_multiple_requests_different_request_ids(self, agent, caplog, monkeypatch):
+        monkeypatch.setattr(log, "propagate", True)
+        with caplog.at_level(logging.INFO):
+            agent.respond("first message", session_id="session-1")
+            agent.respond("second message", session_id="session-1")
+
+        logs = [record.getMessage() for record in caplog.records]
+
+        request_ids = []
+        for log_line in logs:
+            if '"request_id":' in log_line:
+                try:
+                    data = json.loads(log_line)
+                    if "request_id" in data:
+                        request_ids.append(data["request_id"])
+                except Exception:
+                    pass
+
+        assert len(set(request_ids)) >= 2

@@ -11,6 +11,10 @@ class LLMError(Exception):
     pass
 
 
+class RetryError(LLMError):
+    pass
+
+
 class LLMClient:
     def __init__(self, model_name):
         self.model_name = model_name
