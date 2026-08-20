@@ -80,7 +80,7 @@ class Agent:
 
     def generate_llm_response(self, prompt):
         return retry_with_backoff(
-            lambda: self.llm.generate(prompt),
+            lambda: self.llm.generate(prompt), 
             max_attempts=Config.RETRY_ATTEMPTS,
             delay_seconds=Config.RETRY_DELAY,
             exceptions=LLMError,

@@ -6,8 +6,9 @@ import pytest
 from agent import Agent
 from config import Config
 from context import RequestContext
-from llm import MockLLMClient
+from llm import LLMError, MockLLMClient, FlakyMockLLMClient
 from logger import log
+from retry import retry_with_backoff, RetryError
 from storage import MemoryStorage
 from tools import validate_tool_call, plan_tool_call, execute_tool
 
@@ -208,3 +209,64 @@ class TestContext:
                     pass
 
         assert len(set(request_ids)) >= 2
+
+
+class TestRetry:
+    def test_recovers_after_transient_failures(self):
+        calls = {"count": 0}
+
+        def flaky():
+            calls["count"] += 1
+            if calls["count"] < 3:
+                raise LLMError("transient failure")
+            return "ok"
+
+        result = retry_with_backoff(flaky, max_attempts=3, delay_seconds=0)
+        assert result == "ok"
+        assert calls["count"] == 3
+
+    def test_raises_retry_error_after_max_attempts(self):
+        def always_fails():
+            raise LLMError("boom")
+
+        with pytest.raises(RetryError):
+            retry_with_backoff(always_fails, max_attempts=3, delay_seconds=0)
+
+    def test_only_retries_matching_exceptions(self):
+        calls = {"count": 0}
+
+        def raises_value_error():
+            calls["count"] += 1
+            raise ValueError("not retried")
+
+        with pytest.raises(ValueError):
+            retry_with_backoff(
+                raises_value_error,
+                max_attempts=3,
+                delay_seconds=0,
+                exceptions=LLMError,
+            )
+        assert calls["count"] == 1
+
+    def test_flaky_mock_fails_initial_attempts_then_succeeds(self):
+        client = FlakyMockLLMClient(fail_times=2)
+        result = retry_with_backoff(
+            lambda: client.generate("hello"),
+            max_attempts=5,
+            delay_seconds=0,
+            exceptions=LLMError,
+        )
+        assert result["reply"]
+        assert client.attempts == 3
+
+    def test_agent_retries_flaky_llm_and_recovers(self, agent):
+        agent.llm = FlakyMockLLMClient(fail_times=2)
+        response = agent.respond("hello")
+        assert "received" in response.lower()
+        assert agent.llm.attempts == 3
+
+    def test_agent_falls_back_when_llm_keeps_failing(self, agent):
+        agent.llm = FlakyMockLLMClient(fail_times=99)
+        response = agent.respond("hello")
+        assert "unavailable" in response.lower()
+        assert agent.llm.attempts == 3
