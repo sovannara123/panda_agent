@@ -92,6 +92,47 @@ class OpenAILLMClient(LLMClient):
         }
 
 
+class OllamaLLMClient(LLMClient):
+    def __init__(self, model_name, host=None):
+        super().__init__(model_name)
+        self.host = host or Config.OLLAMA_HOST
+
+    def generate(self, prompt):
+        self._validate_prompt(prompt)
+
+        url = f"{self.host.rstrip('/')}/api/generate"
+
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "stream": False
+        }
+
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                timeout=120
+            )
+            response.raise_for_status()
+        except requests.RequestException:
+            logger.exception("Ollama API request failed")
+            raise LLMError("Ollama API request failed.")
+
+        data = response.json()
+
+        reply = data.get("response", "").strip()
+        if not reply:
+            logger.warning("Ollama returned an empty response")
+            raise LLMError("Ollama returned an empty response.")
+
+        logger.info("LLM response generated with model %s", self.model_name)
+        return {
+            "model": self.model_name,
+            "reply": reply
+        }
+
+
 class GeminiLLMClient(LLMClient):
     def __init__(self, api_key, model_name):
         super().__init__(model_name)
@@ -158,6 +199,9 @@ def create_llm_client():
 
     if provider == "mock":
         return MockLLMClient(Config.MODEL_NAME)
+
+    if provider == "ollama":
+        return OllamaLLMClient(Config.MODEL_NAME)
 
     logger.error("Unknown LLM provider: %s", provider)
     raise LLMError(f"Unknown LLM provider: {provider}")

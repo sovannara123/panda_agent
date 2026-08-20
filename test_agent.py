@@ -6,6 +6,7 @@ import pytest
 from agent import Agent
 from config import Config
 from context import RequestContext
+from llm import MockLLMClient
 from logger import log
 from storage import MemoryStorage
 from tools import validate_tool_call, plan_tool_call, execute_tool
@@ -14,10 +15,12 @@ from tools import validate_tool_call, plan_tool_call, execute_tool
 @pytest.fixture 
 def agent(tmp_path):
     """Fresh agent backed by temp storage for each test."""
-    return Agent(storage=MemoryStorage(
+    agent = Agent(storage=MemoryStorage(
         str(tmp_path / "memory.json"),
         str(tmp_path / "meta.json")
     ))
+    agent.llm = MockLLMClient()
+    return agent
 
 
 class TestToolCalling:
