@@ -20,3 +20,6 @@ class Config:
     MESSAGE_LIMIT_PREMIUM = None  # None = unlimited
 
     MAX_HISTORY = 5 
+
+    RETRY_ATTEMPTS = int(os.getenv("RETRY_ATTEMPTS", "3"))
+    RETRY_DELAY = float(os.getenv("RETRY_DELAY", "0.2"))

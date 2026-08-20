@@ -1,6 +1,6 @@
 import logging
-
 import requests
+
 
 from config import Config
 
@@ -45,7 +45,21 @@ class MockLLMClient(LLMClient):
             "reply": f"[Mock LLM] I received your request."
         }
 
+class FlakyMockLLMClient(MockLLMClient):
+    def __init__(self, model_name="mock-model", fail_times: int = 2):
+        super().__init__(model_name)
+        self.fail_times = fail_times
+        self.attempts = 0
 
+    def generate(self, prompt: str):
+        self.attempts += 1
+
+        if self.attempts <= self.fail_times:
+            raise LLMError(
+                f"Simulated LLM failure on attempt {self.attempts}."
+            )
+
+        return super().generate(prompt)
 class OpenAILLMClient(LLMClient):
     def __init__(self, api_key, model_name):
         super().__init__(model_name)

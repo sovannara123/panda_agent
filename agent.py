@@ -1,10 +1,11 @@
+from retry import RetryError, retry_with_backoff
 from context import RequestContext 
 import logging
 
 from config import Config
 from storage import MemoryStorage
 from tools import plan_tool_call, execute_tool, validate_tool_call
-from llm import create_llm_client, LLMError, RetryError
+from llm import create_llm_client, LLMError
 from prompts import build_system_prompt, build_user_prompt
 from tool_schemas import TOOL_SCHEMAS
 from logger import log_user_input, log_tool_planned, log_tool_result, log_llm_call, log_usage_check, log_response, log_fallback
@@ -78,7 +79,12 @@ class Agent:
         return None
 
     def generate_llm_response(self, prompt):
-        return self.llm.generate(prompt)
+        return retry_with_backoff(
+            lambda: self.llm.generate(prompt),
+            max_attempts=Config.RETRY_ATTEMPTS,
+            delay_seconds=Config.RETRY_DELAY,
+            exceptions=LLMError,
+        )
 
     def respond(self, user_input: str, session_id: str = None) -> str:
         ctx = RequestContext.new(session_id)
