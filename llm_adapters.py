@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from openai import OpenAI
 import requests
+import json
 from config import Config
 from logger import log_event
 
@@ -26,6 +27,16 @@ class LLMClient(ABC):
     @abstractmethod
     def generate_with_tools(self, messages: list, tools: list) -> dict:
         """Generate response with tool calling support."""
+        pass
+
+    @abstractmethod
+    def generate_stream(self, prompt: str):
+        """Stream response token by token. Yields content chunks."""
+        pass
+
+    @abstractmethod
+    def generate_with_tools_stream(self, messages: list, tools: list):
+        """Stream response with function calling. Yields content chunks and tool calls."""
         pass
 
 
@@ -107,6 +118,108 @@ class OpenAIClient(LLMClient):
 
         except Exception as error:
             log_event("openai_error", {
+                "error": str(error),
+                "model": self.model_name
+            })
+            raise
+
+    def generate_stream(self, prompt: str):
+        """Stream response token by token."""
+        try:
+            stream = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=500,
+                stream=True
+            )
+
+            collected_content = []
+            for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    content = chunk.choices[0].delta.content
+                    collected_content.append(content)
+                    yield {
+                        "type": "content",
+                        "content": content
+                    }
+
+            yield {
+                "type": "done",
+                "full_content": "".join(collected_content),
+                "usage": None  # Usage not available in streaming mode
+            }
+
+        except Exception as error:
+            log_event("openai_stream_error", {
+                "error": str(error),
+                "model": self.model_name
+            })
+            raise
+
+    def generate_with_tools_stream(self, messages: list, tools: list):
+        """Stream response with function calling support."""
+        try:
+            stream = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+                temperature=0.7,
+                max_tokens=500,
+                stream=True
+            )
+
+            collected_content = []
+            collected_tool_calls = {}
+
+            for chunk in stream:
+                delta = chunk.choices[0].delta
+
+                if delta.content:
+                    collected_content.append(delta.content)
+                    yield {
+                        "type": "content",
+                        "content": delta.content
+                    }
+
+                if delta.tool_calls:
+                    for tool_call_delta in delta.tool_calls:
+                        index = tool_call_delta.index
+
+                        if index not in collected_tool_calls:
+                            collected_tool_calls[index] = {
+                                "id": "",
+                                "tool": "",
+                                "arguments": ""
+                            }
+
+                        if tool_call_delta.id:
+                            collected_tool_calls[index]["id"] = tool_call_delta.id
+
+                        if tool_call_delta.function:
+                            if tool_call_delta.function.name:
+                                collected_tool_calls[index]["tool"] += tool_call_delta.function.name
+
+                            if tool_call_delta.function.arguments:
+                                collected_tool_calls[index]["arguments"] += tool_call_delta.function.arguments
+
+            if collected_tool_calls:
+                yield {
+                    "type": "tool_calls",
+                    "tool_calls": list(collected_tool_calls.values())
+                }
+
+            yield {
+                "type": "done",
+                "full_content": "".join(collected_content),
+                "usage": None
+            }
+
+        except Exception as error:
+            log_event("openai_stream_error", {
                 "error": str(error),
                 "model": self.model_name
             })
@@ -195,6 +308,106 @@ class GroqClient(LLMClient):
             })
             raise
 
+    def generate_stream(self, prompt: str):
+        """Stream response token by token."""
+        try:
+            stream = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                max_tokens=500,
+                stream=True
+            )
+
+            collected_content = []
+            for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    content = chunk.choices[0].delta.content
+                    collected_content.append(content)
+                    yield {
+                        "type": "content",
+                        "content": content
+                    }
+
+            yield {
+                "type": "done",
+                "full_content": "".join(collected_content),
+                "usage": None
+            }
+
+        except Exception as error:
+            log_event("groq_stream_error", {
+                "error": str(error),
+                "model": self.model_name
+            })
+            raise
+
+    def generate_with_tools_stream(self, messages: list, tools: list):
+        """Stream response with function calling support."""
+        try:
+            stream = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+                temperature=0.7,
+                max_tokens=500,
+                stream=True
+            )
+
+            collected_content = []
+            collected_tool_calls = {}
+
+            for chunk in stream:
+                delta = chunk.choices[0].delta
+
+                if delta.content:
+                    collected_content.append(delta.content)
+                    yield {
+                        "type": "content",
+                        "content": delta.content
+                    }
+
+                if delta.tool_calls:
+                    for tool_call_delta in delta.tool_calls:
+                        index = tool_call_delta.index
+
+                        if index not in collected_tool_calls:
+                            collected_tool_calls[index] = {
+                                "id": "",
+                                "tool": "",
+                                "arguments": ""
+                            }
+
+                        if tool_call_delta.id:
+                            collected_tool_calls[index]["id"] = tool_call_delta.id
+
+                        if tool_call_delta.function:
+                            if tool_call_delta.function.name:
+                                collected_tool_calls[index]["tool"] += tool_call_delta.function.name
+
+                            if tool_call_delta.function.arguments:
+                                collected_tool_calls[index]["arguments"] += tool_call_delta.function.arguments
+
+            if collected_tool_calls:
+                yield {
+                    "type": "tool_calls",
+                    "tool_calls": list(collected_tool_calls.values())
+                }
+
+            yield {
+                "type": "done",
+                "full_content": "".join(collected_content),
+                "usage": None
+            }
+
+        except Exception as error:
+            log_event("groq_stream_error", {
+                "error": str(error),
+                "model": self.model_name
+            })
+            raise
+
 
 class MockLLMClient(LLMClient):
     """Mock client for testing."""
@@ -220,6 +433,46 @@ class MockLLMClient(LLMClient):
             "model": self.model_name,
             "reply": None,
             "tool_calls": [],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}
+        }
+
+    def generate_stream(self, prompt: str):
+        """Mock streaming - yields full response in chunks."""
+        if not prompt or not prompt.strip():
+            raise ValueError("Prompt cannot be empty.")
+
+        if "crash" in prompt.lower():
+            raise Exception("Simulated LLM API crash.")
+
+        reply = f"[Mock LLM] I received your request."
+        words = reply.split()
+
+        for i, word in enumerate(words):
+            if i > 0:
+                yield {"type": "content", "content": " " + word}
+            else:
+                yield {"type": "content", "content": word}
+
+        yield {
+            "type": "done",
+            "full_content": reply,
+            "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}
+        }
+
+    def generate_with_tools_stream(self, messages: list, tools: list):
+        """Mock streaming with tools - no tool calls, just content."""
+        reply = None
+        words = "Mock response with tools.".split()
+
+        for i, word in enumerate(words):
+            if i > 0:
+                yield {"type": "content", "content": " " + word}
+            else:
+                yield {"type": "content", "content": word}
+
+        yield {
+            "type": "done",
+            "full_content": "Mock response with tools.",
             "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}
         }
 
@@ -297,6 +550,66 @@ class OllamaClient(LLMClient):
         result = self.generate(last_user_msg)
         result["tool_calls"] = []
         return result
+
+    def generate_stream(self, prompt: str):
+        """Stream response from Ollama."""
+        if not prompt or not prompt.strip():
+            raise ValueError("Prompt cannot be empty.")
+
+        url = f"{self.host.rstrip('/')}/api/generate"
+
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "stream": True
+        }
+
+        try:
+            response = requests.post(url, json=payload, timeout=120, stream=True)
+            response.raise_for_status()
+        except requests.RequestException as error:
+            log_event("ollama_stream_error", {
+                "error": str(error),
+                "model": self.model_name
+            })
+            raise
+
+        collected_content = []
+        for line in response.iter_lines():
+            if not line:
+                continue
+            try:
+                data = json.loads(line.decode("utf-8"))
+            except json.JSONDecodeError:
+                continue
+
+            if "response" in data:
+                chunk = data["response"]
+                if chunk:
+                    collected_content.append(chunk)
+                    yield {
+                        "type": "content",
+                        "content": chunk
+                    }
+
+            if data.get("done", False):
+                break
+
+        yield {
+            "type": "done",
+            "full_content": "".join(collected_content),
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        }
+
+    def generate_with_tools_stream(self, messages: list, tools: list):
+        """Ollama doesn't support native tool calling - fallback to simple stream."""
+        last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+        for chunk in self.generate_stream(last_user_msg):
+            yield chunk
+        yield {
+            "type": "tool_calls",
+            "tool_calls": []
+        }
 
 
 def create_llm_client(provider: str = None, model_name: str = None, api_key: str = None) -> LLMClient:

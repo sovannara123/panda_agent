@@ -408,3 +408,231 @@ class Agent:
         except Exception as error:
             log_llm_call(self.llm.model_name, success=False, error=str(error), context=ctx)
             return get_fallback_response("tool_failed", details=str(error))
+
+    def respond_stream(self, user_input: str, session_id: str = None):
+        """Stream response - uses function calling if available."""
+        if hasattr(self.llm, 'generate_with_tools_stream') and not isinstance(self.llm, MockLLMClient):
+            return self.respond_with_function_calling_stream(user_input, session_id)
+        else:
+            return self._respond_legacy_stream(user_input, session_id)
+
+    def _respond_legacy_stream(self, user_input: str, session_id: str = None):
+        """Legacy streaming with rule-based tool planning."""
+        ctx = RequestContext.new(session_id)
+
+        log_user_input(user_input, ctx)
+
+        limit_error = self.check_usage_limit()
+
+        if limit_error:
+            log_usage_check(
+                plan=self.metadata.get("user_plan", "free"),
+                messages_used=self.metadata.get("messages_used", 0),
+                limit=self.get_usage_limit(),
+                blocked=True,
+                context=ctx
+            )
+
+            response = get_fallback_response("usage_limit")
+            log_fallback("usage_limit", context=ctx)
+
+            self.add_message("assistant", response)
+            yield {"type": "content", "content": response}
+            yield {"type": "done", "full_content": response}
+            return
+
+        log_usage_check(
+            plan=self.metadata.get("user_plan", "free"),
+            messages_used=self.metadata.get("messages_used", 0),
+            limit=self.get_usage_limit(),
+            blocked=False,
+            context=ctx
+        )
+
+        self.increment_message_used()
+        self.add_message("user", user_input)
+
+        tool_call = plan_tool_call(user_input)
+
+        if tool_call:
+            if not validate_tool_call(tool_call):
+                response = get_fallback_response("invalid_tool")
+                log_fallback("invalid_tool", details=str(tool_call), context=ctx)
+
+                self.add_message("assistant", response)
+                yield {"type": "content", "content": response}
+                yield {"type": "done", "full_content": response}
+                return
+
+            log_tool_planned(tool_call, ctx)
+
+            tool_result = execute_tool(tool_call)
+            success = tool_result.get("status") == "success"
+
+            log_tool_result(
+                tool_name=tool_call.get("tool"),
+                success=success,
+                result=tool_result,
+                context=ctx
+            )
+
+            if success:
+                response = self.create_tool_response(tool_call, tool_result)
+            else:
+                response = get_fallback_response(
+                    "tool_failed",
+                    details=tool_result.get("message")
+                )
+                log_fallback("tool_failed", details=tool_result.get("message"), context=ctx)
+
+            self.add_message("assistant", response)
+            log_response(response, ctx)
+            yield {"type": "content", "content": response}
+            yield {"type": "done", "full_content": response}
+            return
+
+        else:
+            try:
+                prompt = self.build_prompt(user_input)
+                for chunk in self.llm.generate_stream(prompt):
+                    yield chunk
+                log_llm_call(self.llm.model_name, success=True, context=ctx)
+
+            except Exception as error:
+                log_llm_call(self.llm.model_name, success=False, error=str(error), context=ctx)
+                response = get_fallback_response("llm_unavailable", details=str(error))
+                log_fallback("llm_unavailable", details=str(error), context=ctx)
+                yield {"type": "content", "content": response}
+                yield {"type": "done", "full_content": response}
+                return
+
+    def respond_with_function_calling_stream(self, user_input: str, session_id: str = None):
+        """Stream response using LLM function calling."""
+        ctx = RequestContext.new(session_id)
+
+        log_user_input(user_input, ctx)
+
+        limit_error = self.check_usage_limit()
+
+        if limit_error:
+            log_usage_check(
+                plan=self.metadata.get("user_plan", "free"),
+                messages_used=self.metadata.get("messages_used", 0),
+                limit=self.get_usage_limit(),
+                blocked=True,
+                context=ctx
+            )
+
+            response = get_fallback_response("usage_limit")
+            log_fallback("usage_limit", context=ctx)
+
+            self.add_message("assistant", response)
+            yield {"type": "content", "content": response}
+            yield {"type": "done", "full_content": response}
+            return
+
+        log_usage_check(
+            plan=self.metadata.get("user_plan", "free"),
+            messages_used=self.metadata.get("messages_used", 0),
+            limit=self.get_usage_limit(),
+            blocked=False,
+            context=ctx
+        )
+
+        self.increment_message_used()
+        self.add_message("user", user_input)
+
+        messages = [
+            {"role": "system", "content": self.system_prompt}
+        ]
+
+        for msg in self.memory[-10:]:
+            messages.append({
+                "role": msg["role"],
+                "content": msg["content"]
+            })
+
+        tool_calls_to_execute = []
+
+        try:
+            for chunk in self.llm.generate_with_tools_stream(messages, OPENAI_TOOLS):
+                yield chunk
+
+                if chunk.get("type") == "tool_calls":
+                    tool_calls_to_execute = chunk["tool_calls"]
+
+            if tool_calls_to_execute:
+                yield from self._handle_tool_calls_stream(tool_calls_to_execute, messages, ctx)
+            else:
+                # No tool calls, just add the response to memory
+                final_content = ""
+                # We need to collect the content from the stream
+                # The final chunk has full_content
+                pass
+
+        except Exception as error:
+            log_llm_call(self.llm.model_name, success=False, error=str(error), context=ctx)
+            response = get_fallback_response("llm_unavailable", details=str(error))
+            log_fallback("llm_unavailable", details=str(error), context=ctx)
+            yield {"type": "content", "content": response}
+            yield {"type": "done", "full_content": response}
+            return
+
+    def _handle_tool_calls_stream(self, tool_calls: list, messages: list, ctx):
+        """Execute tool calls and continue streaming with tool results."""
+        formatted_tool_calls = []
+        for tc in tool_calls:
+            formatted_tool_calls.append({
+                "id": tc["id"],
+                "type": "function",
+                "function": {
+                    "name": tc["tool"],
+                    "arguments": tc["arguments"]
+                }
+            })
+
+        messages.append({
+            "role": "assistant",
+            "content": "",
+            "tool_calls": formatted_tool_calls
+        })
+
+        for tool_call in tool_calls:
+            tool_name = tool_call["tool"]
+
+            try:
+                arguments = json.loads(tool_call["arguments"])
+            except json.JSONDecodeError:
+                arguments = {}
+
+            log_tool_planned({"tool": tool_name, "arguments": arguments}, ctx)
+
+            tool_result = execute_tool({
+                "tool": tool_name,
+                "arguments": arguments
+            })
+
+            success = tool_result.get("status") == "success"
+
+            log_tool_result(
+                tool_name=tool_name,
+                success=success,
+                result=tool_result,
+                context=ctx
+            )
+
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call["id"],
+                "content": json.dumps(tool_result)
+            })
+
+        try:
+            for chunk in self.llm.generate_with_tools_stream(messages, OPENAI_TOOLS):
+                yield chunk
+
+        except Exception as error:
+            log_llm_call(self.llm.model_name, success=False, error=str(error), context=ctx)
+            response = get_fallback_response("tool_failed", details=str(error))
+            yield {"type": "content", "content": response}
+            yield {"type": "done", "full_content": response}
