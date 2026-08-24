@@ -12,6 +12,7 @@ class Config:
 
     API_KEY = os.getenv("OPENAI_API_KEY")
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "mock")
     MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")
     OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")

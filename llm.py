@@ -14,7 +14,7 @@ class LLMError(Exception):
 class RetryError(LLMError):
     pass
 
-
+#ASTRACT BASE 
 class LLMClient:
     def __init__(self, model_name):
         self.model_name = model_name
@@ -27,7 +27,7 @@ class LLMClient:
             logger.warning("Empty prompt rejected")
             raise LLMError("Prompt cannot be empty.")
 
-
+#TESTING FALLBACK 
 class MockLLMClient(LLMClient):
     def __init__(self, model_name="mock-model"):
         super().__init__(model_name)
@@ -44,7 +44,7 @@ class MockLLMClient(LLMClient):
             "model": self.model_name,
             "reply": f"[Mock LLM] I received your request."
         }
-
+#SIMULATE THE FAILURE FOR RETRY TESTING 
 class FlakyMockLLMClient(MockLLMClient):
     def __init__(self, model_name="mock-model", fail_times: int = 2):
         super().__init__(model_name)
@@ -60,15 +60,18 @@ class FlakyMockLLMClient(MockLLMClient):
             )
 
         return super().generate(prompt)
+
+#OPENAI API 
 class OpenAILLMClient(LLMClient):
-    def __init__(self, api_key, model_name):
+    def __init__(self, api_key, model_name, base_url="https://api.openai.com/v1"):
         super().__init__(model_name)
         self.api_key = api_key
+        self.base_url = base_url
 
     def generate(self, prompt):
         self._validate_prompt(prompt)
 
-        url = "https://api.openai.com/v1/chat/completions"
+        url = f"{self.base_url}/chat/completions"
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -105,7 +108,7 @@ class OpenAILLMClient(LLMClient):
             "reply": data["choices"][0]["message"]["content"]
         }
 
-
+#LOCAL OLLAMA SERVER 
 class OllamaLLMClient(LLMClient):
     def __init__(self, model_name, host=None):
         super().__init__(model_name)
@@ -146,6 +149,7 @@ class OllamaLLMClient(LLMClient):
             "reply": reply
         }
 
+#GEMINI API 
 
 class GeminiLLMClient(LLMClient):
     def __init__(self, api_key, model_name):
@@ -204,6 +208,16 @@ def create_llm_client():
             logger.error("LLM_PROVIDER is openai but OPENAI_API_KEY is not set")
             raise LLMError("OPENAI_API_KEY is required for the OpenAI provider.")
         return OpenAILLMClient(Config.API_KEY, Config.MODEL_NAME)
+
+    if provider == "groq":
+        if not Config.GROQ_API_KEY:
+            logger.error("LLM_PROVIDER is groq but GROQ_API_KEY is not set")
+            raise LLMError("GROQ_API_KEY is required for the Groq provider.")
+        return OpenAILLMClient(
+            Config.GROQ_API_KEY,
+            Config.MODEL_NAME,
+            base_url="https://api.groq.com/openai/v1"
+        )
 
     if provider == "gemini":
         if not Config.API_KEY:
