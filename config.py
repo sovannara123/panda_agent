@@ -6,11 +6,12 @@ load_dotenv()
 
 
 class Config:
-    AGENT_NAME = os.getenv("AGENT_NAME", "Panda")
+    AGENT_NAME = os.getenv("AGENT_NAME", "Nova")
     AGENT_ROLE = os.getenv("AGENT_ROLE", "AI learning assistant")
     AGENT_VERSION = os.getenv("AGENT_VERSION", "1.0")
 
-    API_KEY = os.getenv("OPENAI_API_KEY")
+    API_KEY = os.getenv("API_KEY", "")
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "mock")
@@ -20,7 +21,7 @@ class Config:
     MESSAGE_LIMIT_FREE = int(os.getenv("MESSAGE_LIMIT_FREE", "10"))
     MESSAGE_LIMIT_PREMIUM = None  # None = unlimited
 
-    MAX_HISTORY = 5 
+    MAX_HISTORY = int(os.getenv("MAX_HISTORY", "20"))
 
     RETRY_ATTEMPTS = int(os.getenv("RETRY_ATTEMPTS", "3"))
     RETRY_DELAY = float(os.getenv("RETRY_DELAY", "0.2"))

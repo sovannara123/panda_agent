@@ -5,7 +5,7 @@ import logging
 from config import Config
 from storage import MemoryStorage
 from tools import plan_tool_call, execute_tool, validate_tool_call
-from llm import create_llm_client, LLMError
+from llm_adapters import create_llm_client, MockLLMClient
 from prompts import build_system_prompt, build_user_prompt
 from tool_schemas import TOOL_SCHEMAS
 from logger import log_user_input, log_tool_planned, log_tool_result, log_llm_call, log_usage_check, log_response, log_fallback
@@ -15,10 +15,17 @@ logger = logging.getLogger(__name__)
 
 
 class Agent:
-    def __init__(self, storage=None):
+    def __init__(self, storage=None, llm_client=None):
         self.name = Config.AGENT_NAME
         self.storage = storage or MemoryStorage()
-        self.llm = create_llm_client()
+        
+        if llm_client:
+            self.llm = llm_client
+        elif Config.API_KEY or Config.GROQ_API_KEY:
+            self.llm = create_llm_client()
+        else:
+            self.llm = MockLLMClient(Config.MODEL_NAME)
+        
         self.memory = self.storage.load_messages()
         self.metadata = self.storage.load_metadata()
         self.system_prompt = build_system_prompt(self.name, TOOL_SCHEMAS)
@@ -80,10 +87,10 @@ class Agent:
 
     def generate_llm_response(self, prompt):
         return retry_with_backoff(
-            lambda: self.llm.generate(prompt), # this 
+            lambda: self.llm.generate(prompt),
             max_attempts=Config.RETRY_ATTEMPTS,
             delay_seconds=Config.RETRY_DELAY,
-            exceptions=LLMError,
+            exceptions=Exception,
         )
 
     def respond(self, user_input: str, session_id: str = None) -> str:
@@ -163,7 +170,7 @@ class Agent:
                 response = get_fallback_response("llm_unavailable", details=str(error))
                 log_fallback("llm_unavailable", details=str(error), context=ctx)
 
-            except LLMError as error:
+            except Exception as error:
                 log_llm_call(self.llm.model_name, success=False, error=str(error), context=ctx)
                 response = get_fallback_response("llm_unavailable", details=str(error))
                 log_fallback("llm_unavailable", details=str(error), context=ctx)
