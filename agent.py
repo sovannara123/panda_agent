@@ -636,3 +636,18 @@ class Agent:
             response = get_fallback_response("tool_failed", details=str(error))
             yield {"type": "content", "content": response}
             yield {"type": "done", "full_content": response}
+
+    def respond_stream_simple(self, user_input: str, session_id: str = None):
+        """Yield just content strings for simple consumers.
+        
+        Wraps respond_stream() and yields only the content tokens,
+        skipping type fields and tool_calls events.
+        """
+        seen_content = False
+        for chunk in self.respond_stream(user_input, session_id):
+            if chunk.get("type") == "content":
+                seen_content = True
+                yield chunk["content"]
+            elif chunk.get("type") == "done" and seen_content:
+                # Only break on final done chunk (after content was seen)
+                break
