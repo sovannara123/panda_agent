@@ -1,6 +1,7 @@
 from retry import RetryError, retry_with_backoff
 from context import RequestContext 
 import logging
+import json
 
 from config import Config
 from storage import MemoryStorage
@@ -8,6 +9,7 @@ from tools import plan_tool_call, execute_tool, validate_tool_call
 from llm_adapters import create_llm_client, MockLLMClient
 from prompts import build_system_prompt, build_user_prompt
 from tool_schemas import TOOL_SCHEMAS
+from tool_formatter import OPENAI_TOOLS
 from logger import log_user_input, log_tool_planned, log_tool_result, log_llm_call, log_usage_check, log_response, log_fallback
 from fallback import get_fallback_response
 
@@ -179,3 +181,230 @@ class Agent:
         log_response(response, ctx)
 
         return response
+
+    def respond(self, user_input: str, session_id: str = None) -> str:
+        """Main entry point - uses function calling if available."""
+        if hasattr(self.llm, 'generate_with_tools') and not isinstance(self.llm, MockLLMClient):
+            return self.respond_with_function_calling(user_input, session_id)
+        else:
+            return self._respond_legacy(user_input, session_id)
+
+    def _respond_legacy(self, user_input: str, session_id: str = None) -> str:
+        """Legacy response method with rule-based tool planning."""
+        ctx = RequestContext.new(session_id)
+
+        log_user_input(user_input, ctx)
+
+        limit_error = self.check_usage_limit()
+
+        if limit_error:
+            log_usage_check(
+                plan=self.metadata.get("user_plan", "free"),
+                messages_used=self.metadata.get("messages_used", 0),
+                limit=self.get_usage_limit(),
+                blocked=True,
+                context=ctx
+            )
+
+            response = get_fallback_response("usage_limit")
+            log_fallback("usage_limit", context=ctx)
+
+            self.add_message("assistant", response)
+            return response
+
+        log_usage_check(
+            plan=self.metadata.get("user_plan", "free"),
+            messages_used=self.metadata.get("messages_used", 0),
+            limit=self.get_usage_limit(),
+            blocked=False,
+            context=ctx
+        )
+
+        self.increment_message_used()
+        self.add_message("user", user_input)
+
+        tool_call = plan_tool_call(user_input)
+
+        if tool_call:
+            if not validate_tool_call(tool_call):
+                response = get_fallback_response("invalid_tool")
+                log_fallback("invalid_tool", details=str(tool_call), context=ctx)
+
+                self.add_message("assistant", response)
+                return response
+
+            log_tool_planned(tool_call, ctx)
+
+            tool_result = execute_tool(tool_call)
+            success = tool_result.get("status") == "success"
+
+            log_tool_result(
+                tool_name=tool_call.get("tool"),
+                success=success,
+                result=tool_result,
+                context=ctx
+            )
+
+            if success:
+                response = self.create_tool_response(tool_call, tool_result)
+            else:
+                response = get_fallback_response(
+                    "tool_failed",
+                    details=tool_result.get("message")
+                )
+                log_fallback("tool_failed", details=tool_result.get("message"), context=ctx)
+
+        else:
+            try:
+                prompt = self.build_prompt(user_input)
+                llm_output = self.generate_llm_response(prompt)
+
+                log_llm_call(self.llm.model_name, success=True, context=ctx)
+                response = llm_output["reply"]
+
+            except RetryError as error:
+                log_llm_call(self.llm.model_name, success=False, error=str(error), context=ctx)
+                response = get_fallback_response("llm_unavailable", details=str(error))
+                log_fallback("llm_unavailable", details=str(error), context=ctx)
+
+            except Exception as error:
+                log_llm_call(self.llm.model_name, success=False, error=str(error), context=ctx)
+                response = get_fallback_response("llm_unavailable", details=str(error))
+                log_fallback("llm_unavailable", details=str(error), context=ctx)
+
+        self.add_message("assistant", response)
+        log_response(response, ctx)
+
+        return response
+
+    def respond_with_function_calling(self, user_input: str, session_id: str = None) -> str:
+        """Main response method using LLM function calling."""
+        ctx = RequestContext.new(session_id)
+
+        log_user_input(user_input, ctx)
+
+        limit_error = self.check_usage_limit()
+
+        if limit_error:
+            log_usage_check(
+                plan=self.metadata.get("user_plan", "free"),
+                messages_used=self.metadata.get("messages_used", 0),
+                limit=self.get_usage_limit(),
+                blocked=True,
+                context=ctx
+            )
+
+            response = get_fallback_response("usage_limit")
+            log_fallback("usage_limit", context=ctx)
+
+            self.add_message("assistant", response)
+            return response
+
+        log_usage_check(
+            plan=self.metadata.get("user_plan", "free"),
+            messages_used=self.metadata.get("messages_used", 0),
+            limit=self.get_usage_limit(),
+            blocked=False,
+            context=ctx
+        )
+
+        self.increment_message_used()
+        self.add_message("user", user_input)
+
+        messages = [
+            {"role": "system", "content": self.system_prompt}
+        ]
+
+        for msg in self.memory[-10:]:
+            messages.append({
+                "role": msg["role"],
+                "content": msg["content"]
+            })
+
+        try:
+            llm_response = self.llm.generate_with_tools(messages, OPENAI_TOOLS)
+
+            log_llm_call(self.llm.model_name, success=True, context=ctx)
+
+            if llm_response.get("tool_calls"):
+                response = self._handle_tool_calls(llm_response, messages, ctx)
+            else:
+                response = llm_response["reply"]
+
+        except RetryError as error:
+            log_llm_call(self.llm.model_name, success=False, error=str(error), context=ctx)
+            response = get_fallback_response("llm_unavailable")
+            log_fallback("llm_unavailable", details=str(error), context=ctx)
+
+        except Exception as error:
+            log_llm_call(self.llm.model_name, success=False, error=str(error), context=ctx)
+            response = get_fallback_response("llm_unavailable", details=str(error))
+            log_fallback("llm_unavailable", details=str(error), context=ctx)
+
+        self.add_message("assistant", response)
+        log_response(response, ctx)
+
+        return response
+
+    def _handle_tool_calls(self, llm_response: dict, messages: list, ctx) -> str:
+        """Execute tool calls and get final response from LLM."""
+        tool_calls = llm_response["tool_calls"]
+
+        # Add type field required by OpenAI API
+        formatted_tool_calls = []
+        for tc in tool_calls:
+            formatted_tool_calls.append({
+                "id": tc["id"],
+                "type": "function",
+                "function": {
+                    "name": tc["tool"],
+                    "arguments": tc["arguments"]
+                }
+            })
+
+        messages.append({
+            "role": "assistant",
+            "content": llm_response.get("reply") or "",
+            "tool_calls": formatted_tool_calls
+        })
+
+        for tool_call in tool_calls:
+            tool_name = tool_call["tool"]
+
+            try:
+                arguments = json.loads(tool_call["arguments"])
+            except json.JSONDecodeError:
+                arguments = {}
+
+            log_tool_planned({"tool": tool_name, "arguments": arguments}, ctx)
+
+            tool_result = execute_tool({
+                "tool": tool_name,
+                "arguments": arguments
+            })
+
+            success = tool_result.get("status") == "success"
+
+            log_tool_result(
+                tool_name=tool_name,
+                success=success,
+                result=tool_result,
+                context=ctx
+            )
+
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call["id"],
+                "content": json.dumps(tool_result)
+            })
+
+        try:
+            final_response = self.llm.generate_with_tools(messages, OPENAI_TOOLS)
+
+            log_llm_call(self.llm.model_name, success=True, context=ctx)
+
+            return final_response["reply"]
+
+        except Exception as error:
+            log_llm_call(self.llm.model_name, success=False, error=str(error), context=ctx)
+            return get_fallback_response("tool_failed", details=str(error))
