@@ -6,7 +6,7 @@ import pytest
 from agent import Agent
 from config import Config
 from context import RequestContext
-from llm import LLMError, MockLLMClient, FlakyMockLLMClient
+from llm_adapters import LLMError, MockLLMClient, FlakyMockLLMClient
 from logger import log
 from retry import retry_with_backoff, RetryError
 from storage import MemoryStorage
@@ -230,7 +230,7 @@ class TestRetry:
             raise LLMError("boom")
 
         with pytest.raises(RetryError):
-            retry_with_backoff(always_fails, max_attempts=3, delay_seconds=0)
+            retry_with_backoff(always_fails, max_attempts=3, delay_seconds=0, exceptions=(LLMError,))
 
     def test_only_retries_matching_exceptions(self):
         calls = {"count": 0}
