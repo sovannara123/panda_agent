@@ -95,7 +95,7 @@ class Agent:
             exceptions=Exception,
         )
 
-    def respond(self, user_input: str, session_id: str = None) -> str:
+    def _respond_legacy(self, user_input: str, session_id: str = None) -> str:
         ctx = RequestContext.new(session_id)
 
         log_user_input(user_input, ctx)
@@ -188,94 +188,6 @@ class Agent:
             return self.respond_with_function_calling(user_input, session_id)
         else:
             return self._respond_legacy(user_input, session_id)
-
-    def _respond_legacy(self, user_input: str, session_id: str = None) -> str:
-        """Legacy response method with rule-based tool planning."""
-        ctx = RequestContext.new(session_id)
-
-        log_user_input(user_input, ctx)
-
-        limit_error = self.check_usage_limit()
-
-        if limit_error:
-            log_usage_check(
-                plan=self.metadata.get("user_plan", Config.USER_PLAN),
-                messages_used=self.metadata.get("messages_used", 0),
-                limit=self.get_usage_limit(),
-                blocked=True,
-                context=ctx
-            )
-
-            response = get_fallback_response("usage_limit")
-            log_fallback("usage_limit", context=ctx)
-
-            self.add_message("assistant", response)
-            return response
-
-        log_usage_check(
-            plan=self.metadata.get("user_plan", Config.USER_PLAN),
-            messages_used=self.metadata.get("messages_used", 0),
-            limit=self.get_usage_limit(),
-            blocked=False,
-            context=ctx
-        )
-
-        self.increment_message_used()
-        self.add_message("user", user_input)
-
-        tool_call = plan_tool_call(user_input)
-
-        if tool_call:
-            if not validate_tool_call(tool_call):
-                response = get_fallback_response("invalid_tool")
-                log_fallback("invalid_tool", details=str(tool_call), context=ctx)
-
-                self.add_message("assistant", response)
-                return response
-
-            log_tool_planned(tool_call, ctx)
-
-            tool_result = execute_tool(tool_call)
-            success = tool_result.get("status") == "success"
-
-            log_tool_result(
-                tool_name=tool_call.get("tool"),
-                success=success,
-                result=tool_result,
-                context=ctx
-            )
-
-            if success:
-                response = self.create_tool_response(tool_call, tool_result)
-            else:
-                response = get_fallback_response(
-                    "tool_failed",
-                    details=tool_result.get("message")
-                )
-                log_fallback("tool_failed", details=tool_result.get("message"), context=ctx)
-
-        else:
-            try:
-                prompt = self.build_prompt(user_input)
-                llm_output = self.generate_llm_response(prompt)
-
-                log_llm_call(self.llm.model_name, success=True, context=ctx)
-                response = llm_output["reply"]
-
-            except RetryError as error:
-                log_llm_call(self.llm.model_name, success=False, error=str(error), context=ctx)
-                response = get_fallback_response("llm_unavailable", details=str(error))
-                log_fallback("llm_unavailable", details=str(error), context=ctx)
-
-            except Exception as error:
-                log_llm_call(self.llm.model_name, success=False, error=str(error), context=ctx)
-                response = get_fallback_response("llm_unavailable", details=str(error))
-                log_fallback("llm_unavailable", details=str(error), context=ctx)
-
-        self.add_message("assistant", response)
-        log_response(response, ctx)
-
-        return response
 
     def respond_with_function_calling(self, user_input: str, session_id: str = None) -> str:
         """Main response method using LLM function calling."""
