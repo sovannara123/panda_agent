@@ -1,11 +1,12 @@
 import json
 import logging
 from pathlib import Path
+from config import Config
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_METADATA = {
-    "user_plan": "free",
+    "user_plan": Config.USER_PLAN,
     "messages_used": 0,
 }
 

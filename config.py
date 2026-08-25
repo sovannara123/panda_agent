@@ -21,6 +21,8 @@ class Config:
     MESSAGE_LIMIT_FREE = int(os.getenv("MESSAGE_LIMIT_FREE", "10"))
     MESSAGE_LIMIT_PREMIUM = None  # None = unlimited
 
+    USER_PLAN = os.getenv("USER_PLAN", "free")
+
     MAX_HISTORY = int(os.getenv("MAX_HISTORY", "20"))
 
     RETRY_ATTEMPTS = int(os.getenv("RETRY_ATTEMPTS", "3"))

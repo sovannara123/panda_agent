@@ -67,7 +67,7 @@ class Agent:
         return f"Tool result: {result}"
 
     def get_usage_limit(self):
-        plan = self.metadata.get("user_plan", "free")
+        plan = self.metadata.get("user_plan", Config.USER_PLAN)
         return None if plan == "premium" else Config.MESSAGE_LIMIT_FREE
 
     def increment_message_used(self):
@@ -76,7 +76,7 @@ class Agent:
 
     def check_usage_limit(self):
         limit = self.get_usage_limit()
-        plan = self.metadata.get("user_plan", "free")
+        plan = self.metadata.get("user_plan", Config.USER_PLAN)
 
         if limit is not None and self.metadata.get("messages_used", 0) >= limit:
             logger.warning("Usage limit reached: %s (%s plan)", limit, plan)
@@ -104,7 +104,7 @@ class Agent:
 
         if limit_error:
             log_usage_check(
-                plan=self.metadata.get("user_plan", "free"),
+                plan=self.metadata.get("user_plan", Config.USER_PLAN),
                 messages_used=self.metadata.get("messages_used", 0),
                 limit=self.get_usage_limit(),
                 blocked=True,
@@ -118,7 +118,7 @@ class Agent:
             return response
 
         log_usage_check(
-            plan=self.metadata.get("user_plan", "free"),
+            plan=self.metadata.get("user_plan", Config.USER_PLAN),
             messages_used=self.metadata.get("messages_used", 0),
             limit=self.get_usage_limit(),
             blocked=False,
@@ -199,7 +199,7 @@ class Agent:
 
         if limit_error:
             log_usage_check(
-                plan=self.metadata.get("user_plan", "free"),
+                plan=self.metadata.get("user_plan", Config.USER_PLAN),
                 messages_used=self.metadata.get("messages_used", 0),
                 limit=self.get_usage_limit(),
                 blocked=True,
@@ -213,7 +213,7 @@ class Agent:
             return response
 
         log_usage_check(
-            plan=self.metadata.get("user_plan", "free"),
+            plan=self.metadata.get("user_plan", Config.USER_PLAN),
             messages_used=self.metadata.get("messages_used", 0),
             limit=self.get_usage_limit(),
             blocked=False,
@@ -287,7 +287,7 @@ class Agent:
 
         if limit_error:
             log_usage_check(
-                plan=self.metadata.get("user_plan", "free"),
+                plan=self.metadata.get("user_plan", Config.USER_PLAN),
                 messages_used=self.metadata.get("messages_used", 0),
                 limit=self.get_usage_limit(),
                 blocked=True,
@@ -301,7 +301,7 @@ class Agent:
             return response
 
         log_usage_check(
-            plan=self.metadata.get("user_plan", "free"),
+            plan=self.metadata.get("user_plan", Config.USER_PLAN),
             messages_used=self.metadata.get("messages_used", 0),
             limit=self.get_usage_limit(),
             blocked=False,
@@ -426,7 +426,7 @@ class Agent:
 
         if limit_error:
             log_usage_check(
-                plan=self.metadata.get("user_plan", "free"),
+                plan=self.metadata.get("user_plan", Config.USER_PLAN),
                 messages_used=self.metadata.get("messages_used", 0),
                 limit=self.get_usage_limit(),
                 blocked=True,
@@ -442,7 +442,7 @@ class Agent:
             return
 
         log_usage_check(
-            plan=self.metadata.get("user_plan", "free"),
+            plan=self.metadata.get("user_plan", Config.USER_PLAN),
             messages_used=self.metadata.get("messages_used", 0),
             limit=self.get_usage_limit(),
             blocked=False,
@@ -516,7 +516,7 @@ class Agent:
 
         if limit_error:
             log_usage_check(
-                plan=self.metadata.get("user_plan", "free"),
+                plan=self.metadata.get("user_plan", Config.USER_PLAN),
                 messages_used=self.metadata.get("messages_used", 0),
                 limit=self.get_usage_limit(),
                 blocked=True,
@@ -532,7 +532,7 @@ class Agent:
             return
 
         log_usage_check(
-            plan=self.metadata.get("user_plan", "free"),
+            plan=self.metadata.get("user_plan", Config.USER_PLAN),
             messages_used=self.metadata.get("messages_used", 0),
             limit=self.get_usage_limit(),
             blocked=False,

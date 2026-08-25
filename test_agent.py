@@ -21,6 +21,7 @@ def agent(tmp_path):
         str(tmp_path / "meta.json")
     ))
     agent.llm = MockLLMClient()
+    agent.metadata["user_plan"] = "free"  # Default to free for tests
     return agent
 
 
