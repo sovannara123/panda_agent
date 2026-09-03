@@ -25,7 +25,7 @@ FALLBACK_RESPONSES = {
 }
 
 
-def get_fallback_response(reason: str, details: str = None) -> str:
+def get_fallback_response(reason: str, details: str | None = None) -> str:
     base_response = FALLBACK_RESPONSES.get(
         reason,
         FALLBACK_RESPONSES["unknown"]

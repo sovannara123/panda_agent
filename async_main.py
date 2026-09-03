@@ -29,7 +29,7 @@ async def main():
         print("Agent: ", end="", flush=True)
 
         async for token in agent.respond_stream_async(user_input, session_id=session_id):
-            print(token, end="", flush=True)
+            print(token, end="", flush=True)    
 
         print()
 

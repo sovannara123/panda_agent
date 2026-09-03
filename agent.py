@@ -1,34 +1,64 @@
 from retry import RetryError, retry_with_backoff
 from context import RequestContext 
-import logging
-import json
+import logging 
+import json 
 
-from config import Config
-from storage import MemoryStorage
+from config import get_config
+from storage import MemoryStorage, SQLiteStorage
 from tools import plan_tool_call, execute_tool, validate_tool_call
 from llm_adapters import create_llm_client, MockLLMClient
 from prompts import build_system_prompt, build_user_prompt
 from tool_schemas import TOOL_SCHEMAS
 from tool_formatter import OPENAI_TOOLS
-from logger import log_user_input, log_tool_planned, log_tool_result, log_llm_call, log_usage_check, log_response, log_fallback
+from logger import get_logger, log_user_input, log_tool_planned, log_tool_result, log_llm_call, log_usage_check, log_response, log_fallback
 from fallback import get_fallback_response
+from schemas import ToolCallRequest
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)    
+
+
+def validate_user_input(message: str) -> str: 
+    """Validate and sanitize user input."""
+    if not message or not message.strip():
+        raise ValueError("Message cannot be empty")
+    message = message.strip()
+    if len(message) > 4000:
+        raise ValueError("Message too long (max 4000 characters)")
+    # Basic injection prevention
+    dangerous_patterns = ["<script", "javascript:", "onerror=", "onload=", "eval(", "alert("]
+    if any(pattern in message.lower() for pattern in dangerous_patterns):
+        raise ValueError("Invalid message content")
+    return message
+
+
+def validate_tool_call_input(tool: str, arguments: dict) -> dict:
+    """Validate tool call input."""
+    try:
+        validated = ToolCallRequest(tool=tool, arguments=arguments)
+        return validated.arguments
+    except Exception as e:
+        raise ValueError(f"Invalid tool call: {e}")
 
 
 class Agent:
-    def __init__(self, storage=None, llm_client=None):
-        self.name = Config.AGENT_NAME
-        self.storage = storage or MemoryStorage()
+    def __init__(self, storage=None, llm_client=None, session_id: str | None = None):
+        self.name = get_config().AGENT_NAME
+        self.session_id = session_id
+        self.storage = storage or SQLiteStorage()
         
-        if llm_client:
+        if llm_client: 
             self.llm = llm_client
-        elif Config.API_KEY or Config.GROQ_API_KEY:
+        elif get_config().API_KEY or get_config().GROQ_API_KEY:
             self.llm = create_llm_client()
         else:
-            self.llm = MockLLMClient(Config.MODEL_NAME)
+            self.llm = MockLLMClient(get_config().MODEL_NAME)
         
-        self.memory = self.storage.load_messages()
+        # For SQLite storage, load messages for this session
+        if isinstance(self.storage, SQLiteStorage) and self.session_id:
+            self.memory: list = self.storage.load_messages(self.session_id, limit=get_config().MAX_HISTORY)
+        else:
+            self.memory: list = self.storage.load_messages()
+        
         self.metadata = self.storage.load_metadata()
         self.system_prompt = build_system_prompt(self.name, TOOL_SCHEMAS)
 
@@ -38,8 +68,13 @@ class Agent:
             "content": content
         })
 
-        self.memory = self.memory[-Config.MAX_HISTORY:]
-        self.storage.save_messages(self.memory)
+        self.memory = self.memory[-get_config().MAX_HISTORY:]
+        
+        # Use session-aware storage if available
+        if isinstance(self.storage, SQLiteStorage) and self.session_id:
+            self.storage.append_message(self.session_id, role, content)
+        else:
+            self.storage.save_messages(self.memory)
 
     def build_prompt(self, user_input):
         return build_user_prompt(self.memory[-5:], user_input)
@@ -48,7 +83,7 @@ class Agent:
         if tool_result.get("status") != "success":
             message = get_fallback_response(
                 "tool_failed",
-                details=tool_result.get("message")
+                details=tool_result.get("message", "")
             )
             log_fallback("tool_failed", message)
             return message
@@ -67,8 +102,8 @@ class Agent:
         return f"Tool result: {result}"
 
     def get_usage_limit(self):
-        plan = self.metadata.get("user_plan", Config.USER_PLAN)
-        return None if plan == "premium" else Config.MESSAGE_LIMIT_FREE
+        plan = self.metadata.get("user_plan", get_config().USER_PLAN)
+        return None if plan == "premium" else get_config().MESSAGE_LIMIT_FREE
 
     def increment_message_used(self):
         self.metadata["messages_used"] = self.metadata.get("messages_used", 0) + 1
@@ -76,7 +111,7 @@ class Agent:
 
     def check_usage_limit(self):
         limit = self.get_usage_limit()
-        plan = self.metadata.get("user_plan", Config.USER_PLAN)
+        plan = self.metadata.get("user_plan", get_config().USER_PLAN)
 
         if limit is not None and self.metadata.get("messages_used", 0) >= limit:
             logger.warning("Usage limit reached: %s (%s plan)", limit, plan)
@@ -90,12 +125,15 @@ class Agent:
     def generate_llm_response(self, prompt):
         return retry_with_backoff(
             lambda: self.llm.generate(prompt),
-            max_attempts=Config.RETRY_ATTEMPTS,
-            delay_seconds=Config.RETRY_DELAY,
-            exceptions=Exception,
+            max_attempts=get_config().RETRY_ATTEMPTS,
+            delay_seconds=get_config().RETRY_DELAY,
+            exceptions=(Exception,),
         )
 
-    def _respond_legacy(self, user_input: str, session_id: str = None) -> str:
+    def _respond_legacy(self, user_input: str, session_id: str | None = None) -> str:
+        # Validate input
+        user_input = validate_user_input(user_input)
+        
         ctx = RequestContext.new(session_id)
 
         log_user_input(user_input, ctx)
@@ -104,7 +142,7 @@ class Agent:
 
         if limit_error:
             log_usage_check(
-                plan=self.metadata.get("user_plan", Config.USER_PLAN),
+                plan=self.metadata.get("user_plan", get_config().USER_PLAN),
                 messages_used=self.metadata.get("messages_used", 0),
                 limit=self.get_usage_limit(),
                 blocked=True,
@@ -118,7 +156,7 @@ class Agent:
             return response
 
         log_usage_check(
-            plan=self.metadata.get("user_plan", Config.USER_PLAN),
+            plan=self.metadata.get("user_plan", get_config().USER_PLAN),
             messages_used=self.metadata.get("messages_used", 0),
             limit=self.get_usage_limit(),
             blocked=False,
@@ -144,7 +182,7 @@ class Agent:
             success = tool_result.get("status") == "success"
 
             log_tool_result(
-                tool_name=tool_call.get("tool"),
+                tool_name=tool_call.get("tool", ""),
                 success=success,
                 result=tool_result,
                 context=ctx
@@ -155,9 +193,9 @@ class Agent:
             else:
                 response = get_fallback_response(
                     "tool_failed",
-                    details=tool_result.get("message")
+                    details=tool_result.get("message", "")
                 )
-                log_fallback("tool_failed", details=tool_result.get("message"), context=ctx)
+                log_fallback("tool_failed", details=tool_result.get("message", ""), context=ctx)
 
         else:
             try:
@@ -182,15 +220,17 @@ class Agent:
 
         return response
 
-    def respond(self, user_input: str, session_id: str = None) -> str:
+    def respond(self, user_input: str, session_id: str | None = None) -> str:
         """Main entry point - uses function calling if available."""
+        user_input = validate_user_input(user_input)
         if hasattr(self.llm, 'generate_with_tools') and not isinstance(self.llm, MockLLMClient):
             return self.respond_with_function_calling(user_input, session_id)
         else:
             return self._respond_legacy(user_input, session_id)
 
-    def respond_with_function_calling(self, user_input: str, session_id: str = None) -> str:
+    def respond_with_function_calling(self, user_input: str, session_id: str | None = None) -> str:
         """Main response method using LLM function calling."""
+        user_input = validate_user_input(user_input)
         ctx = RequestContext.new(session_id)
 
         log_user_input(user_input, ctx)
@@ -199,7 +239,7 @@ class Agent:
 
         if limit_error:
             log_usage_check(
-                plan=self.metadata.get("user_plan", Config.USER_PLAN),
+                plan=self.metadata.get("user_plan", get_config().USER_PLAN),
                 messages_used=self.metadata.get("messages_used", 0),
                 limit=self.get_usage_limit(),
                 blocked=True,
@@ -213,7 +253,7 @@ class Agent:
             return response
 
         log_usage_check(
-            plan=self.metadata.get("user_plan", Config.USER_PLAN),
+            plan=self.metadata.get("user_plan", get_config().USER_PLAN),
             messages_used=self.metadata.get("messages_used", 0),
             limit=self.get_usage_limit(),
             blocked=False,
@@ -321,14 +361,14 @@ class Agent:
             log_llm_call(self.llm.model_name, success=False, error=str(error), context=ctx)
             return get_fallback_response("tool_failed", details=str(error))
 
-    def respond_stream(self, user_input: str, session_id: str = None):
+    def respond_stream(self, user_input: str, session_id: str | None = None):
         """Stream response - uses function calling if available."""
         if hasattr(self.llm, 'generate_with_tools_stream') and not isinstance(self.llm, MockLLMClient):
             return self.respond_with_function_calling_stream(user_input, session_id)
         else:
             return self._respond_legacy_stream(user_input, session_id)
 
-    def _respond_legacy_stream(self, user_input: str, session_id: str = None):
+    def _respond_legacy_stream(self, user_input: str, session_id: str | None = None):
         """Legacy streaming with rule-based tool planning."""
         ctx = RequestContext.new(session_id)
 
@@ -338,7 +378,7 @@ class Agent:
 
         if limit_error:
             log_usage_check(
-                plan=self.metadata.get("user_plan", Config.USER_PLAN),
+                plan=self.metadata.get("user_plan", get_config().USER_PLAN),
                 messages_used=self.metadata.get("messages_used", 0),
                 limit=self.get_usage_limit(),
                 blocked=True,
@@ -354,7 +394,7 @@ class Agent:
             return
 
         log_usage_check(
-            plan=self.metadata.get("user_plan", Config.USER_PLAN),
+            plan=self.metadata.get("user_plan", get_config().USER_PLAN),
             messages_used=self.metadata.get("messages_used", 0),
             limit=self.get_usage_limit(),
             blocked=False,
@@ -382,7 +422,7 @@ class Agent:
             success = tool_result.get("status") == "success"
 
             log_tool_result(
-                tool_name=tool_call.get("tool"),
+                tool_name=tool_call.get("tool", ""),
                 success=success,
                 result=tool_result,
                 context=ctx
@@ -393,9 +433,9 @@ class Agent:
             else:
                 response = get_fallback_response(
                     "tool_failed",
-                    details=tool_result.get("message")
+                    details=tool_result.get("message", "")
                 )
-                log_fallback("tool_failed", details=tool_result.get("message"), context=ctx)
+                log_fallback("tool_failed", details=tool_result.get("message", ""), context=ctx)
 
             self.add_message("assistant", response)
             log_response(response, ctx)
@@ -406,19 +446,27 @@ class Agent:
         else:
             try:
                 prompt = self.build_prompt(user_input)
+                collected_content = []
                 for chunk in self.llm.generate_stream(prompt):
+                    collected_content.append(chunk.get("content", ""))
                     yield chunk
+                response = "".join(collected_content)
                 log_llm_call(self.llm.model_name, success=True, context=ctx)
+
+                self.add_message("assistant", response)
+                log_response(response, ctx)
 
             except Exception as error:
                 log_llm_call(self.llm.model_name, success=False, error=str(error), context=ctx)
                 response = get_fallback_response("llm_unavailable", details=str(error))
                 log_fallback("llm_unavailable", details=str(error), context=ctx)
+                self.add_message("assistant", response)
+                log_response(response, ctx)
                 yield {"type": "content", "content": response}
                 yield {"type": "done", "full_content": response}
                 return
 
-    def respond_with_function_calling_stream(self, user_input: str, session_id: str = None):
+    def respond_with_function_calling_stream(self, user_input: str, session_id: str | None = None):
         """Stream response using LLM function calling."""
         ctx = RequestContext.new(session_id)
 
@@ -428,7 +476,7 @@ class Agent:
 
         if limit_error:
             log_usage_check(
-                plan=self.metadata.get("user_plan", Config.USER_PLAN),
+                plan=self.metadata.get("user_plan", get_config().USER_PLAN),
                 messages_used=self.metadata.get("messages_used", 0),
                 limit=self.get_usage_limit(),
                 blocked=True,
@@ -444,7 +492,7 @@ class Agent:
             return
 
         log_usage_check(
-            plan=self.metadata.get("user_plan", Config.USER_PLAN),
+            plan=self.metadata.get("user_plan", get_config().USER_PLAN),
             messages_used=self.metadata.get("messages_used", 0),
             limit=self.get_usage_limit(),
             blocked=False,
@@ -464,34 +512,45 @@ class Agent:
                 "content": msg["content"]
             })
 
-        tool_calls_to_execute = []
+        tool_calls_to_execute: list[dict] = []
+        collected_content = []
 
         try:
             for chunk in self.llm.generate_with_tools_stream(messages, OPENAI_TOOLS):
-                yield chunk
-
-                if chunk.get("type") == "tool_calls":
-                    tool_calls_to_execute = chunk["tool_calls"]
+                if chunk.get("type") == "content":
+                    collected_content.append(chunk.get("content", ""))
+                    yield chunk
+                elif chunk.get("type") == "tool_calls":
+                    tool_calls_to_execute = chunk["tool_calls"]  # type: ignore[assignment]
+                elif chunk.get("type") == "done":
+                    # Don't yield the done chunk yet if we have tool calls to execute
+                    if not tool_calls_to_execute:
+                        response = "".join(collected_content)
+                        self.add_message("assistant", response)
+                        log_response(response, ctx)
+                        yield chunk
+                    # If we have tool calls, we'll yield the final done chunk after tool execution
 
             if tool_calls_to_execute:
-                yield from self._handle_tool_calls_stream(tool_calls_to_execute, messages, ctx)
-            else:
-                # No tool calls, just add the response to memory
-                final_content = ""
-                # We need to collect the content from the stream
-                # The final chunk has full_content
-                pass
+                # Execute tools and continue streaming
+                yield from self._handle_tool_calls_stream(tool_calls_to_execute, messages, ctx, collected_content)
+            # If no tool calls, we already yielded the done chunk and saved the response
 
         except Exception as error:
             log_llm_call(self.llm.model_name, success=False, error=str(error), context=ctx)
             response = get_fallback_response("llm_unavailable", details=str(error))
             log_fallback("llm_unavailable", details=str(error), context=ctx)
+            self.add_message("assistant", response)
+            log_response(response, ctx)
             yield {"type": "content", "content": response}
             yield {"type": "done", "full_content": response}
             return
 
-    def _handle_tool_calls_stream(self, tool_calls: list, messages: list, ctx):
+    def _handle_tool_calls_stream(self, tool_calls: list[dict], messages: list, ctx, collected_content: list | None = None):
         """Execute tool calls and continue streaming with tool results."""
+        if collected_content is None:
+            collected_content = []
+        
         formatted_tool_calls = []
         for tc in tool_calls:
             formatted_tool_calls.append({
@@ -505,7 +564,7 @@ class Agent:
 
         messages.append({
             "role": "assistant",
-            "content": "",
+            "content": "".join(collected_content),
             "tool_calls": formatted_tool_calls
         })
 
@@ -540,16 +599,26 @@ class Agent:
             })
 
         try:
+            final_content = list(collected_content)  # Start with content from first stream
             for chunk in self.llm.generate_with_tools_stream(messages, OPENAI_TOOLS):
+                if chunk.get("type") == "content":
+                    final_content.append(chunk.get("content", ""))
                 yield chunk
+
+            # Save final response to memory
+            response = "".join(final_content)
+            self.add_message("assistant", response)
+            log_response(response, ctx)
 
         except Exception as error:
             log_llm_call(self.llm.model_name, success=False, error=str(error), context=ctx)
             response = get_fallback_response("tool_failed", details=str(error))
+            self.add_message("assistant", response)
+            log_response(response, ctx)
             yield {"type": "content", "content": response}
             yield {"type": "done", "full_content": response}
 
-    def respond_stream_simple(self, user_input: str, session_id: str = None):
+    def respond_stream_simple(self, user_input: str, session_id: str | None = None):
         """Yield just content strings for simple consumers.
         
         Wraps respond_stream() and yields only the content tokens,

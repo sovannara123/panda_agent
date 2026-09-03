@@ -4,9 +4,9 @@ import requests
 import json
 import asyncio
 import httpx
-from typing import AsyncGenerator
-from config import Config
-from logger import log_event
+from typing import AsyncGenerator, Generator
+from config import get_config
+from logger import get_logger, log_event
 
 
 class LLMError(Exception):
@@ -22,6 +22,12 @@ class RetryError(LLMError):
 class LLMClient(ABC):
     """Base interface for all LLM providers."""
 
+    @property
+    @abstractmethod
+    def model_name(self) -> str:
+        """Return the model name."""
+        pass
+
     @abstractmethod
     def generate(self, prompt: str) -> dict:
         """Generate response from prompt."""
@@ -33,12 +39,12 @@ class LLMClient(ABC):
         pass
 
     @abstractmethod
-    def generate_stream(self, prompt: str):
+    def generate_stream(self, prompt: str) -> Generator[dict, None, None]:
         """Stream response token by token. Yields content chunks."""
         pass
 
     @abstractmethod
-    def generate_with_tools_stream(self, messages: list, tools: list):
+    def generate_with_tools_stream(self, messages: list, tools: list) -> Generator[dict, None, None]:
         """Stream response with function calling. Yields content chunks and tool calls."""
         pass
 
@@ -66,15 +72,19 @@ class LLMClient(ABC):
 class OpenAIClient(LLMClient):
     """OpenAI GPT adapter."""
 
-    def __init__(self, model_name: str = None, api_key: str = None, base_url: str = None):
-        self.model_name = model_name or Config.MODEL_NAME
-        self.api_key = api_key or Config.API_KEY
+    def __init__(self, model_name: str | None = None, api_key: str | None = None, base_url: str | None = None):
+        self._model_name = model_name or get_config().MODEL_NAME
+        self.api_key = api_key or get_config().API_KEY
 
         if not self.api_key:
             raise ValueError("OpenAI API key is required. Set API_KEY in .env")
 
         self.client = OpenAI(api_key=self.api_key, base_url=base_url)
         self._async_client = AsyncOpenAI(api_key=self.api_key, base_url=base_url)
+
+    @property
+    def model_name(self) -> str:
+        return self._model_name
 
     def generate(self, prompt: str) -> dict:
         """Simple text generation."""
@@ -92,9 +102,9 @@ class OpenAIClient(LLMClient):
                 "model": self.model_name,
                 "reply": response.choices[0].message.content,
                 "usage": {
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens,
-                    "total_tokens": response.usage.total_tokens
+                    "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                    "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                    "total_tokens": response.usage.total_tokens if response.usage else 0
                 }
             }
 
@@ -124,9 +134,9 @@ class OpenAIClient(LLMClient):
                 "reply": message.content,
                 "tool_calls": [],
                 "usage": {
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens,
-                    "total_tokens": response.usage.total_tokens
+                    "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                    "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                    "total_tokens": response.usage.total_tokens if response.usage else 0
                 }
             }
 
@@ -134,8 +144,8 @@ class OpenAIClient(LLMClient):
                 for tool_call in message.tool_calls:
                     result["tool_calls"].append({
                         "id": tool_call.id,
-                        "tool": tool_call.function.name,
-                        "arguments": tool_call.function.arguments
+                        "tool": tool_call.function.name,  # type: ignore[attr-defined]
+                        "arguments": tool_call.function.arguments  # type: ignore[attr-defined]
                     })
 
             return result
@@ -263,9 +273,9 @@ class OpenAIClient(LLMClient):
                 "model": self.model_name,
                 "reply": response.choices[0].message.content,
                 "usage": {
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens,
-                    "total_tokens": response.usage.total_tokens
+                    "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                    "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                    "total_tokens": response.usage.total_tokens if response.usage else 0
                 }
             }
 
@@ -295,9 +305,9 @@ class OpenAIClient(LLMClient):
                 "reply": message.content,
                 "tool_calls": [],
                 "usage": {
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens,
-                    "total_tokens": response.usage.total_tokens
+                    "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                    "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                    "total_tokens": response.usage.total_tokens if response.usage else 0
                 }
             }
 
@@ -305,8 +315,8 @@ class OpenAIClient(LLMClient):
                 for tool_call in message.tool_calls:
                     result["tool_calls"].append({
                         "id": tool_call.id,
-                        "tool": tool_call.function.name,
-                        "arguments": tool_call.function.arguments
+                        "tool": tool_call.function.name,  # type: ignore[attr-defined]
+                        "arguments": tool_call.function.arguments  # type: ignore[attr-defined]
                     })
 
             return result
@@ -422,9 +432,9 @@ class OpenAIClient(LLMClient):
 class GroqClient(LLMClient):
     """Groq adapter (OpenAI-compatible)."""
 
-    def __init__(self, model_name: str = None, api_key: str = None):
-        self.model_name = model_name or Config.MODEL_NAME
-        self.api_key = api_key or Config.GROQ_API_KEY
+    def __init__(self, model_name: str | None = None, api_key: str | None = None):
+        self._model_name = model_name or get_config().MODEL_NAME
+        self.api_key = api_key or get_config().GROQ_API_KEY
 
         if not self.api_key:
             raise ValueError("Groq API key is required. Set GROQ_API_KEY in .env")
@@ -437,6 +447,10 @@ class GroqClient(LLMClient):
             api_key=self.api_key,
             base_url="https://api.groq.com/openai/v1"
         )
+
+    @property
+    def model_name(self) -> str:
+        return self._model_name
 
     def generate(self, prompt: str) -> dict:
         try:
@@ -451,9 +465,9 @@ class GroqClient(LLMClient):
                 "model": self.model_name,
                 "reply": response.choices[0].message.content,
                 "usage": {
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens,
-                    "total_tokens": response.usage.total_tokens
+                    "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                    "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                    "total_tokens": response.usage.total_tokens if response.usage else 0
                 }
             }
 
@@ -482,9 +496,9 @@ class GroqClient(LLMClient):
                 "reply": message.content,
                 "tool_calls": [],
                 "usage": {
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens,
-                    "total_tokens": response.usage.total_tokens
+                    "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                    "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                    "total_tokens": response.usage.total_tokens if response.usage else 0
                 }
             }
 
@@ -492,8 +506,8 @@ class GroqClient(LLMClient):
                 for tool_call in message.tool_calls:
                     result["tool_calls"].append({
                         "id": tool_call.id,
-                        "tool": tool_call.function.name,
-                        "arguments": tool_call.function.arguments
+                        "tool": tool_call.function.name,  # type: ignore[attr-defined]
+                        "arguments": tool_call.function.arguments  # type: ignore[attr-defined]
                     })
 
             return result
@@ -619,9 +633,9 @@ class GroqClient(LLMClient):
                 "model": self.model_name,
                 "reply": response.choices[0].message.content,
                 "usage": {
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens,
-                    "total_tokens": response.usage.total_tokens
+                    "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                    "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                    "total_tokens": response.usage.total_tokens if response.usage else 0
                 }
             }
 
@@ -651,9 +665,9 @@ class GroqClient(LLMClient):
                 "reply": message.content,
                 "tool_calls": [],
                 "usage": {
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens,
-                    "total_tokens": response.usage.total_tokens
+                    "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                    "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                    "total_tokens": response.usage.total_tokens if response.usage else 0
                 }
             }
 
@@ -661,8 +675,8 @@ class GroqClient(LLMClient):
                 for tool_call in message.tool_calls:
                     result["tool_calls"].append({
                         "id": tool_call.id,
-                        "tool": tool_call.function.name,
-                        "arguments": tool_call.function.arguments
+                        "tool": tool_call.function.name,  # type: ignore[attr-defined]
+                        "arguments": tool_call.function.arguments  # type: ignore[attr-defined]
                     })
 
             return result
@@ -779,7 +793,11 @@ class MockLLMClient(LLMClient):
     """Mock client for testing."""
 
     def __init__(self, model_name: str = "mock-model"):
-        self.model_name = model_name
+        self._model_name = model_name
+
+    @property
+    def model_name(self) -> str:
+        return self._model_name
 
     def generate(self, prompt: str) -> dict:
         if not prompt or not prompt.strip():
@@ -972,12 +990,17 @@ class FlakyMockLLMClient(MockLLMClient):
             yield chunk
 
 
+
 class OllamaClient(LLMClient):
     """Ollama local LLM adapter."""
 
-    def __init__(self, model_name: str = None, host: str = None):
-        self.model_name = model_name or Config.MODEL_NAME
-        self.host = host or Config.OLLAMA_HOST
+    def __init__(self, model_name: str | None = None, host: str | None = None):
+        self._model_name = model_name or get_config().MODEL_NAME
+        self.host = host or get_config().OLLAMA_HOST
+
+    @property
+    def model_name(self) -> str:
+        return self._model_name
 
     def generate(self, prompt: str) -> dict:
         if not prompt or not prompt.strip():
@@ -1184,26 +1207,26 @@ class OllamaClient(LLMClient):
         }
 
 
-def create_llm_client(provider: str = None, model_name: str = None, api_key: str = None) -> LLMClient:
+def create_llm_client(provider: str | None = None, model_name: str | None = None, api_key: str | None = None) -> LLMClient:
     """Factory function to create LLM client based on provider."""
-    provider = (provider or Config.LLM_PROVIDER).lower()
+    provider = (provider or get_config().LLM_PROVIDER).lower()
 
     if provider == "openai":
         return OpenAIClient(
-            model_name=model_name or Config.MODEL_NAME,
-            api_key=api_key or Config.API_KEY
+            model_name=model_name or get_config().MODEL_NAME,
+            api_key=api_key or get_config().API_KEY
         )
 
     if provider == "groq":
         return GroqClient(
-            model_name=model_name or Config.MODEL_NAME,
-            api_key=api_key or Config.GROQ_API_KEY
+            model_name=model_name or get_config().MODEL_NAME,
+            api_key=api_key or get_config().GROQ_API_KEY
         )
 
     if provider == "mock":
-        return MockLLMClient(model_name or Config.MODEL_NAME)
+        return MockLLMClient(model_name or get_config().MODEL_NAME)
 
     if provider == "ollama":
-        return OllamaClient(model_name=model_name or Config.MODEL_NAME)
+        return OllamaClient(model_name=model_name or get_config().MODEL_NAME)
 
     raise ValueError(f"Unknown LLM provider: {provider}")

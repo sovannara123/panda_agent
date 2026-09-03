@@ -18,3 +18,9 @@ user_meta.json
 .DS_Store
 .idea/
 .vscode/
+
+# Database
+*.db
+
+# Type checking
+pyrightconfig.json

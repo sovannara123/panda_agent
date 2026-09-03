@@ -21,7 +21,7 @@ from tools import execute_tool
 class AsyncAgent(Agent):
     """Async version of Agent for concurrent request handling."""
 
-    async def respond_async(self, user_input: str, session_id: str = None) -> str:
+    async def respond_async(self, user_input: str, session_id: str | None = None) -> str:
         """Async response with function calling."""
 
         ctx = RequestContext.new(session_id)
@@ -78,7 +78,7 @@ class AsyncAgent(Agent):
             if llm_response.get("tool_calls"):
                 response = await self._handle_tool_calls_async(llm_response, messages, ctx)
             else:
-                response = llm_response["reply"]
+                response = llm_response.get("reply") or "I'm not sure how to respond to that."
 
         except Exception as error:
             log_llm_call(self.llm.model_name, success=False, error=str(error), context=ctx)
@@ -142,7 +142,7 @@ class AsyncAgent(Agent):
     async def _execute_single_tool_async(self, tool_call: dict, ctx) -> dict:
         """Execute a single tool asynchronously."""
 
-        tool_name = tool_call["tool"]
+        tool_name = tool_call["tool"] 
 
         try:
             arguments = json.loads(tool_call["arguments"])
@@ -159,6 +159,8 @@ class AsyncAgent(Agent):
             {"tool": tool_name, "arguments": arguments}
         )
 
+
+        
         success = tool_result.get("status") == "success"
 
         log_tool_result(
@@ -170,7 +172,7 @@ class AsyncAgent(Agent):
 
         return tool_result
 
-    async def respond_stream_async(self, user_input: str, session_id: str = None):
+    async def respond_stream_async(self, user_input: str, session_id: str | None = None):
         """Async streaming response."""
 
         ctx = RequestContext.new(session_id)
@@ -218,10 +220,10 @@ class AsyncAgent(Agent):
             })
 
         try:
-            collected_content = []
-            tool_calls_data = None
+            collected_content: list[str] = []
+            tool_calls_data: list[dict] | None = None
 
-            async for chunk in self.llm.generate_with_tools_stream_async(messages, OPENAI_TOOLS):
+            async for chunk in self.llm.generate_with_tools_stream_async(messages, OPENAI_TOOLS):  # type: ignore[union-attr]
                 if chunk["type"] == "content":
                     collected_content.append(chunk["content"])
                     yield chunk["content"]
@@ -247,9 +249,9 @@ class AsyncAgent(Agent):
                 messages.append({
                     "role": "assistant",
                     "content": "".join(collected_content),
-                    "tool_calls": formatted_tool_calls
+                    "tool_calls": formatted_tool_calls  # type: ignore[dict-item]
                 })
-
+                                                             
                 # Execute tools concurrently
                 tool_results = await asyncio.gather(*[
                     self._execute_single_tool_async(tool_call, ctx)
@@ -263,7 +265,7 @@ class AsyncAgent(Agent):
                         "content": json.dumps(tool_result)
                     })
 
-                async for chunk in self.llm.generate_with_tools_stream_async(messages, OPENAI_TOOLS):
+                async for chunk in self.llm.generate_with_tools_stream_async(messages, OPENAI_TOOLS):  # type: ignore[union-attr]
                     if chunk["type"] == "content":
                         yield chunk["content"]
 

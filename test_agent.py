@@ -4,7 +4,7 @@ import logging
 import pytest
 
 from agent import Agent
-from config import Config
+from config import get_config
 from context import RequestContext
 from llm_adapters import LLMError, MockLLMClient, FlakyMockLLMClient
 from logger import log
@@ -39,6 +39,7 @@ class TestToolCalling:
 
     def test_case_insensitive_order(self):
         call = plan_tool_call("track order a100")
+        assert call is not None
         assert call["arguments"]["order_id"] == "A100"
 
 
@@ -48,33 +49,35 @@ class TestAgentResponses:
         assert "$699" in response
 
     def test_usage_limit_blocks(self, agent):
-        agent.metadata["messages_used"] = Config.MESSAGE_LIMIT_FREE
+        agent.metadata["messages_used"] = get_config().MESSAGE_LIMIT_FREE
         response = agent.respond("hello")
         assert "limit" in response.lower()
-        assert agent.metadata["messages_used"] == Config.MESSAGE_LIMIT_FREE
+        assert agent.metadata["messages_used"] == get_config().MESSAGE_LIMIT_FREE
 
 
 class TestUsageLimit:
     def test_at_limit_blocks(self, agent):
-        agent.metadata["messages_used"] = Config.MESSAGE_LIMIT_FREE
+        agent.metadata["messages_used"] = get_config().MESSAGE_LIMIT_FREE
         response = agent.respond("hello")
         assert "limit" in response.lower()
-        assert agent.metadata["messages_used"] == Config.MESSAGE_LIMIT_FREE
+        assert agent.metadata["messages_used"] == get_config().MESSAGE_LIMIT_FREE
 
     def test_above_limit_blocks(self, agent):
-        agent.metadata["messages_used"] = Config.MESSAGE_LIMIT_FREE + 1
+        agent.metadata["messages_used"] = get_config().MESSAGE_LIMIT_FREE + 1
         response = agent.respond("hello")
         assert "limit" in response.lower()
-        assert agent.metadata["messages_used"] == Config.MESSAGE_LIMIT_FREE + 1
+        assert agent.metadata["messages_used"] == get_config().MESSAGE_LIMIT_FREE + 1
 
     def test_below_limit_allowed_and_increments(self, agent):
-        agent.metadata["messages_used"] = Config.MESSAGE_LIMIT_FREE - 1
+        agent.metadata["messages_used"] = get_config().MESSAGE_LIMIT_FREE - 1
         response = agent.respond("hello")
         assert "limit" not in response.lower()
-        assert agent.metadata["messages_used"] == Config.MESSAGE_LIMIT_FREE
+        assert agent.metadata["messages_used"] == get_config().MESSAGE_LIMIT_FREE
 
     def test_custom_limit_from_config(self, agent, monkeypatch):
-        monkeypatch.setattr(Config, "MESSAGE_LIMIT_FREE", 3)
+        from config import reload_config
+        monkeypatch.setenv("MESSAGE_LIMIT_FREE", "3")
+        reload_config()
         agent.metadata["messages_used"] = 2
         response = agent.respond("hello")
         assert "limit" not in response.lower()
@@ -85,10 +88,10 @@ class TestUsageLimit:
         assert agent.metadata["messages_used"] == 3
 
     def test_blocked_turn_not_counted(self, agent):
-        agent.metadata["messages_used"] = Config.MESSAGE_LIMIT_FREE
+        agent.metadata["messages_used"] = get_config().MESSAGE_LIMIT_FREE
         response = agent.respond("hello")
         assert "limit" in response.lower()
-        assert agent.metadata["messages_used"] == Config.MESSAGE_LIMIT_FREE
+        assert agent.metadata["messages_used"] == get_config().MESSAGE_LIMIT_FREE
         reloaded = agent.storage.load_messages()
         assert len(reloaded) == 1
         assert reloaded[0]["role"] == "assistant"
@@ -102,7 +105,7 @@ class TestUsageLimit:
 
     def test_unknown_plan_defaults_to_free(self, agent):
         agent.metadata["user_plan"] = "enterprise"
-        agent.metadata["messages_used"] = Config.MESSAGE_LIMIT_FREE
+        agent.metadata["messages_used"] = get_config().MESSAGE_LIMIT_FREE
         response = agent.respond("hello")
         assert "limit" in response.lower()
 
@@ -125,7 +128,7 @@ class TestFallbackLogging:
     def test_fallback_logged_on_usage_limit(self, agent, caplog, monkeypatch):
         monkeypatch.setattr(log, "propagate", True)
         caplog.set_level(logging.INFO, logger="agent")
-        agent.metadata["messages_used"] = Config.MESSAGE_LIMIT_FREE
+        agent.metadata["messages_used"] = get_config().MESSAGE_LIMIT_FREE
         agent.respond("hello")
         messages = self._fallback_messages(caplog)
         assert len(messages) == 1
@@ -245,7 +248,7 @@ class TestRetry:
                 raises_value_error,
                 max_attempts=3,
                 delay_seconds=0,
-                exceptions=LLMError,
+                exceptions=(LLMError,),
             )
         assert calls["count"] == 1
 
@@ -255,7 +258,7 @@ class TestRetry:
             lambda: client.generate("hello"),
             max_attempts=5,
             delay_seconds=0,
-            exceptions=LLMError,
+            exceptions=(LLMError,),
         )
         assert result["reply"]
         assert client.attempts == 3
