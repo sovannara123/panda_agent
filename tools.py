@@ -1,6 +1,6 @@
 import logging
 import re
-
+from rag import search_knowledge_base   
 from tool_schemas import TOOL_SCHEMAS
 
 logger = logging.getLogger(__name__)
@@ -26,6 +26,21 @@ WEATHER = {
 
 PRICE_KEYWORDS = ["price", "cost", "rate", "how much"]
 ORDER_KEYWORDS = ["order", "status", "track", "where"]
+KB_KEYWORDS = ["policy", "return", "warranty", "manual", "spec", "specification", "battery", "reset", "wifi", "bluetooth", "temperature", "defect", "refund", "condition", "packaging"]
+
+def search_knowledge_base_tool(query: str) -> dict:
+    """Search the internal knowledge base for company policies or product info."""
+    try:
+        context = search_knowledge_base(query, k=3)
+        return {
+            "status": "success",
+            "result": {"context": context}
+        }
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": f"Knowledge base search failed: {str(error)}"
+        }
 
 
 class UnknownToolError(Exception):
@@ -96,6 +111,14 @@ def plan_tool_call(message):
                     }
                 }
 
+    if any(word in msg for word in KB_KEYWORDS):
+        return {
+            "tool": "search_knowledge_base",
+            "arguments": {
+                "query": msg
+            }
+        }
+
     if any(word in msg for word in ORDER_KEYWORDS):
         return {
             "tool": "check_order_status",
@@ -151,7 +174,8 @@ tool_registry = {
     "get_product_price": get_product_price,
     "check_order_status": check_order_status, 
     "get_weather": get_weather,
-    "test_failure": test_failure
+    "test_failure": test_failure, 
+    "search_knowledge_base": search_knowledge_base_tool
 }
 def execute_tool(tool_call):
     if not isinstance(tool_call, dict):

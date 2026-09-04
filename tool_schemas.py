@@ -1,4 +1,18 @@
 TOOL_SCHEMAS = {
+        "search_knowledge_base": {
+        "name": "search_knowledge_base",
+        "description": "Search the internal knowledge base for company policies, return rules, or product manual details.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The specific question or topic to search for (e.g., 'return policy', 'laptop battery life')"
+                }
+            },
+            "required": ["query"]
+        }
+    },
     "get_product_price": {
         "name": "get_product_price",
         "description": "Get the price of a product by name",
@@ -51,3 +65,6 @@ TOOL_SCHEMAS = {
         }
     }
 }
+
+
+

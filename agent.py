@@ -99,6 +99,10 @@ class Agent:
         if tool_call["tool"] == "get_weather":
             return f"The weather in {result['city']} is {result['weather']}."
 
+        if tool_call["tool"] == "search_knowledge_base":
+            context = result.get("result", {}).get("context", "")
+            return f"Based on the knowledge base:\n\n{context}"
+
         return f"Tool result: {result}"
 
     def get_usage_limit(self):
