@@ -89,6 +89,14 @@ def plan_tool_call(message):
                         "product_name": product
                     }
                 }
+        # No known product found, but price keyword detected - try to extract product from message
+        # Use the whole message as query, let tool handle "not found"
+        return {
+            "tool": "get_product_price",
+            "arguments": {
+                "product_name": message
+            }
+        }
 
     order_match = re.search(r'\b[aA]\d{3}\b', message)
     if order_match and any(word in msg for word in ORDER_KEYWORDS):

@@ -806,9 +806,15 @@ class MockLLMClient(LLMClient):
         if "crash" in prompt.lower():
             raise Exception("Simulated LLM API crash.")
 
+        prompt_lower = prompt.lower()
+        if "joke" in prompt_lower and "python" in prompt_lower:
+            reply = "Why do Python programmers prefer dark mode? Because light attracts bugs!"
+        else:
+            reply = f"[Mock LLM] I received your request."
+
         return {
             "model": self.model_name,
-            "reply": f"[Mock LLM] I received your request.",
+            "reply": reply,
             "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}
         }
 
