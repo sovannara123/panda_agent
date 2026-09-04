@@ -10,7 +10,7 @@ from llm_adapters import LLMError, MockLLMClient, FlakyMockLLMClient
 from logger import log
 from retry import retry_with_backoff, RetryError
 from storage import MemoryStorage
-from tools import validate_tool_call, plan_tool_call, execute_tool
+from tools import validate_tool_call, plan_tool_call, execute_tool, tool_registry
 
 
 @pytest.fixture 
@@ -274,3 +274,16 @@ class TestRetry:
         response = agent.respond("hello")
         assert "unavailable" in response.lower()
         assert agent.llm.attempts == 3
+
+
+class TestRAG:
+    def test_rag_tool_exists(self):
+        assert "search_knowledge_base" in tool_registry
+
+    def test_rag_search_returns_context(self):
+        from rag import search_knowledge_base
+        
+        # This assumes setup_rag.py was run
+        result = search_knowledge_base("return policy", k=1)
+        
+        assert "30 days" in result or "refund" in result.lower()
