@@ -21,6 +21,10 @@ user_meta.json
 
 # Database
 *.db
+chromadb/
+
+# Test output
+*.log
 
 # Type checking
 pyrightconfig.json

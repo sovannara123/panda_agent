@@ -12,7 +12,7 @@ class Config(BaseSettings):
     )
 
     # Agent Configuration
-    AGENT_NAME: str = "Nova"
+    AGENT_NAME: str = "NARA"
     AGENT_ROLE: str = "AI learning assistant"
     AGENT_VERSION: str = "1.0"
 
@@ -20,6 +20,10 @@ class Config(BaseSettings):
     LLM_PROVIDER: str = Field(default="mock", pattern="^(mock|openai|groq|ollama|gemini)$")
     MODEL_NAME: str = "gpt-4o-mini"
     OLLAMA_HOST: str = "http://localhost:11434"
+
+    # Embedding Configuration
+    EMBEDDING_PROVIDER: str = Field(default="local", pattern="^(local|openai)$")
+    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
 
     # API Keys (optional, validated at runtime based on provider)
     API_KEY: str = ""
