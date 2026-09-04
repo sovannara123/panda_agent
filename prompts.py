@@ -15,7 +15,7 @@ USER_PROMPT_TEMPLATE = """Conversation history:
 {history}
 
 Current user message: {user_message}     
-
+ 
 Respond according to the system rules."""
 
 

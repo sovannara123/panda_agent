@@ -86,4 +86,3 @@ panda-agent/
 
 ## License
 
-MIT
