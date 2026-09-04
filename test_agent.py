@@ -11,8 +11,17 @@ from logger import log
 from retry import retry_with_backoff, RetryError
 from storage import MemoryStorage
 from tools import validate_tool_call, plan_tool_call, execute_tool, tool_registry
+from evaluator import AgentEvaluator
 
 
+
+class TestEvaluation:
+    def test_agent_passes_golden_dataset(self):
+        evaluator = AgentEvaluator()
+        report = evaluator.run_evaluation()
+        
+        # We expect at least 80% of tests to pass
+        assert report["overall_score"] >= 80.0, f"Agent evaluation failed with score {report['overall_score']}"
 @pytest.fixture 
 def agent(tmp_path):
     """Fresh agent backed by temp storage for each test."""

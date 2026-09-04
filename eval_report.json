@@ -1,0 +1,83 @@
+{
+  "total_tests": 5,
+  "passed_tests": 3,
+  "failed_tests": 2,
+  "overall_score": 60.0,
+  "detailed_results": [
+    {
+      "test_id": "test_01",
+      "input": "What is the price of a laptop?",
+      "response": "The price of laptop is $999.",
+      "expected_keywords": [
+        "999",
+        "$999"
+      ],
+      "keywords_found": [
+        "999",
+        "$999"
+      ],
+      "score": 1.0,
+      "passed": true,
+      "status": "\u2705 PASS"
+    },
+    {
+      "test_id": "test_02",
+      "input": "Where is order A100?",
+      "response": "Order A100 is shipped.",
+      "expected_keywords": [
+        "shipped",
+        "A100"
+      ],
+      "keywords_found": [
+        "shipped",
+        "a100"
+      ],
+      "score": 1.0,
+      "passed": true,
+      "status": "\u2705 PASS"
+    },
+    {
+      "test_id": "test_03",
+      "input": "What is the return policy?",
+      "response": "Based on the knowledge base:\n\n[Source: panda_agent_docs]\nPanda Agent Return Policy: Customers can return any product within 30 days of purchase for a full refund. Products must be in original condition with all packaging. To initiate a return, the customer must provide their order ID. Refunds are processed within 5-7 business days after the item is received. Electronics have a 1-year limited warranty covering manufacturing defects.\n\n---\n\n[Source: panda_agent_docs]\nLaptop Model X100 Manual: Battery life is up to 12 hours on a single charge. To reset the device, hold the power button for 10 seconds. The device supports Wi-Fi 6 and Bluetooth 5.2. Do not expose the device to temperatures above 40\u00b0C (104\u00b0F).",
+      "expected_keywords": [
+        "30 days",
+        "refund"
+      ],
+      "keywords_found": [
+        "30 days",
+        "refund"
+      ],
+      "score": 1.0,
+      "passed": true,
+      "status": "\u2705 PASS"
+    },
+    {
+      "test_id": "test_04",
+      "input": "Tell me a joke about Python",
+      "response": "[Mock LLM] I received your request.",
+      "expected_keywords": [
+        "joke",
+        "python"
+      ],
+      "keywords_found": [],
+      "score": 0.0,
+      "passed": false,
+      "status": "\u274c FAIL"
+    },
+    {
+      "test_id": "test_05",
+      "input": "What is the price of a spaceship?",
+      "response": "[Mock LLM] I received your request.",
+      "expected_keywords": [
+        "not found",
+        "error",
+        "unavailable"
+      ],
+      "keywords_found": [],
+      "score": 0.0,
+      "passed": false,
+      "status": "\u274c FAIL"
+    }
+  ]
+}
