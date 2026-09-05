@@ -48,7 +48,7 @@ class Agent:
         
         if llm_client: 
             self.llm = llm_client
-        elif get_config().API_KEY or get_config().GROQ_API_KEY:
+        elif get_config().LLM_PROVIDER != "mock" and (get_config().API_KEY or get_config().GROQ_API_KEY or get_config().OLLAMA_HOST):
             self.llm = create_llm_client()
         else:
             self.llm = MockLLMClient(get_config().MODEL_NAME)
