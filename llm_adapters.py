@@ -4,6 +4,7 @@ import requests
 import json
 import asyncio
 import httpx
+import re
 from typing import AsyncGenerator, Generator
 from config import get_config
 from logger import get_logger, log_event
@@ -1145,10 +1146,120 @@ class OllamaClient(LLMClient):
             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         }
 
+    def _build_tool_calling_prompt(self, messages: list, tools: list) -> str:
+        """Build a prompt that instructs the model to output tool calls in JSON format."""
+        tool_descriptions = []
+        for tool in tools:
+            if tool.get("type") == "function":
+                fn = tool["function"]
+                params = fn.get("parameters", {})
+                required = params.get("required", [])
+                properties = params.get("properties", {})
+                
+                param_desc = []
+                for param_name, param_info in properties.items():
+                    req = "required" if param_name in required else "optional"
+                    param_desc.append(f"  - {param_name} ({req}): {param_info.get('description', '')}")
+                
+                tool_descriptions.append(
+                    f"Tool: {fn['name']}\n"
+                    f"Description: {fn['description']}\n"
+                    f"Parameters:\n" + "\n".join(param_desc)
+                )
+        
+        tools_text = "\n\n".join(tool_descriptions) if tool_descriptions else "No tools available."
+        
+        # Extract conversation history (excluding system)
+        history = []
+        for msg in messages:
+            if msg["role"] != "system":
+                history.append(f"{msg['role'].upper()}: {msg['content']}")
+        
+        conversation = "\n".join(history[-6:])  # Last 6 messages for context
+        
+        return f"""You are an AI assistant with access to the following tools:
+
+{tools_text}
+
+When you need to use a tool, respond with a JSON object in this exact format:
+{{"tool_calls": [{{"name": "tool_name", "arguments": {{"param": "value"}}}}]}}
+
+If no tool is needed, respond normally without the tool_calls JSON.
+
+CONVERSATION HISTORY:
+{conversation}
+
+ASSISTANT:"""
+
+    def _parse_tool_calls(self, response: str) -> list:
+        """Parse tool calls from model response."""
+        tool_calls = []
+        
+        # Look for JSON pattern with tool_calls
+        json_pattern = r'\{\s*"tool_calls"\s*:\s*\[.*?\]\s*\}'
+        matches = re.findall(json_pattern, response, re.DOTALL)
+        
+        for match in matches:
+            try:
+                data = json.loads(match)
+                for tc in data.get("tool_calls", []):
+                    tool_calls.append({
+                        "id": f"call_{len(tool_calls)}",
+                        "tool": tc.get("name", ""),
+                        "arguments": json.dumps(tc.get("arguments", {}))
+                    })
+            except json.JSONDecodeError:
+                continue
+        
+        return tool_calls
+
     async def generate_with_tools_async(self, messages: list, tools: list) -> dict:
-        """Async generate with tools - Ollama doesn't support native tool calling."""
-        last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-        result = await self.generate_async(last_user_msg)
+        """Async generate with tools using prompt-based approach for Ollama."""
+        if not tools:
+            last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+            result = await self.generate_async(last_user_msg)
+            result["tool_calls"] = []
+            return result
+        
+        # Build prompt with tool instructions
+        prompt = self._build_tool_calling_prompt(messages, tools)
+        
+        # Generate response
+        result = await self.generate_async(prompt)
+        
+        # Parse tool calls from response
+        tool_calls = self._parse_tool_calls(result.get("reply", ""))
+        
+        # If tool calls found, remove the JSON from reply
+        reply = result.get("reply", "")
+        if tool_calls:
+            # Remove the tool_calls JSON from the reply
+            reply = re.sub(r'\{\s*"tool_calls"\s*:\s*\[.*?\]\s*\}', '', reply, flags=re.DOTALL).strip()
+        
+        return {
+            "model": self.model_name,
+            "reply": reply if reply else None,
+            "tool_calls": tool_calls,
+            "usage": result.get("usage", {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
+        }
+
+    async def generate_with_context_async(self, messages: list) -> dict:
+        """Async generate response with context (tool results), no tool calling."""
+        # Build a simple prompt with conversation history
+        history = []
+        for msg in messages:
+            if msg["role"] == "system":
+                history.append(f"SYSTEM: {msg['content']}")
+            elif msg["role"] == "user":
+                history.append(f"USER: {msg['content']}")
+            elif msg["role"] == "assistant":
+                history.append(f"ASSISTANT: {msg['content']}")
+            elif msg["role"] == "tool":
+                history.append(f"TOOL RESULT: {msg['content']}")
+        
+        prompt = "\n".join(history[-8:]) + "\n\nASSISTANT:"
+        
+        result = await self.generate_async(prompt)
         result["tool_calls"] = []
         return result
 

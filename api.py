@@ -1,7 +1,9 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import uuid
+import json
 
 from async_agent import AsyncAgent
 from logger import log_event
@@ -78,3 +80,28 @@ async def chat_endpoint(request: ChatRequest):
     except Exception as error:
         log_event("api_error", {"error": str(error), "message": request.message})
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.post("/chat/stream")
+async def chat_stream_endpoint(request: ChatRequest):
+    """Streaming chat endpoint."""
+    
+    if agent_instance is None:
+        raise HTTPException(status_code=503, detail="Agent is not initialized")
+    
+    session_id = request.session_id or str(uuid.uuid4())
+    
+    async def generate():
+        try:
+            async for chunk in agent_instance.respond_stream_async(
+                user_input=request.message,
+                session_id=session_id
+            ):
+                # Format as SSE
+                yield f"data: {json.dumps({'content': chunk})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
+        except Exception as error:
+            log_event("api_error", {"error": str(error), "message": request.message})
+            yield f"data: {json.dumps({'error': str(error)})}\n\n"
+    
+    return StreamingResponse(generate(), media_type="text/event-stream")

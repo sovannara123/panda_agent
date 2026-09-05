@@ -129,7 +129,11 @@ class AsyncAgent(Agent):
 
         # Call LLM again with tool results
         try:
-            final_response = await self.llm.generate_with_tools_async(messages, OPENAI_TOOLS)
+            # Use generate_with_context_async if available (for Ollama), otherwise generate_with_tools_async
+            if hasattr(self.llm, 'generate_with_context_async'):
+                final_response = await self.llm.generate_with_context_async(messages)
+            else:
+                final_response = await self.llm.generate_with_tools_async(messages, OPENAI_TOOLS)
 
             log_llm_call(self.llm.model_name, success=True, context=ctx)
 
@@ -152,9 +156,7 @@ class AsyncAgent(Agent):
         log_tool_planned({"tool": tool_name, "arguments": arguments}, ctx)
 
         # Execute tool (tools are sync, but we run them in thread pool)
-        loop = asyncio.get_event_loop()
-        tool_result = await loop.run_in_executor(
-            None,
+        tool_result = await asyncio.to_thread(
             execute_tool,
             {"tool": tool_name, "arguments": arguments}
         )
