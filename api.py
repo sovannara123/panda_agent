@@ -59,6 +59,9 @@ async def chat_endpoint(request: ChatRequest):
     if agent_instance is None: 
         raise HTTPException(status_code=503, detail="Agent is not initialized")
     
+    # Type narrowing: agent_instance is guaranteed to be AsyncAgent after the check
+    agent: AsyncAgent = agent_instance  # type: ignore[assignment]
+    
     # Generate a session ID if not provided
     # Use the user's session ID if they gave one; otherwise create a new one.
     session_id = request.session_id or str(uuid.uuid4())
@@ -66,7 +69,7 @@ async def chat_endpoint(request: ChatRequest):
     try:
         # This is where FastAPI hands the request to your AI brain.
         # Wait for the asynchronous agent operation to finish.
-        response_text = await agent_instance.respond_async(
+        response_text = await agent.respond_async(
             user_input=request.message,
             session_id=session_id
         )
@@ -89,11 +92,14 @@ async def chat_stream_endpoint(request: ChatRequest):
     if agent_instance is None:
         raise HTTPException(status_code=503, detail="Agent is not initialized")
     
+    # Type narrowing: agent_instance is guaranteed to be AsyncAgent after the check
+    agent: AsyncAgent = agent_instance  # type: ignore[assignment]
+    
     session_id = request.session_id or str(uuid.uuid4())
     
     async def generate():
         try:
-            async for chunk in agent_instance.respond_stream_async(
+            async for chunk in agent.respond_stream_async(
                 user_input=request.message,
                 session_id=session_id
             ):

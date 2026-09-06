@@ -69,6 +69,11 @@ class LLMClient(ABC):
         """Async stream response with function calling support."""
         pass
 
+    @abstractmethod
+    async def generate_with_context_async(self, messages: list) -> dict:
+        """Async generate response with context (tool results), no tool calling."""
+        pass
+
 
 class OpenAIClient(LLMClient):
     """OpenAI GPT adapter."""
@@ -424,6 +429,34 @@ class OpenAIClient(LLMClient):
 
         except Exception as error:
             log_event("openai_stream_error", {
+                "error": str(error),
+                "model": self.model_name
+            })
+            raise
+
+    async def generate_with_context_async(self, messages: list) -> dict:
+        """Async generate response with context (tool results), no tool calling."""
+        try:
+            response = await self._async_client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=500
+            )
+
+            return {
+                "model": self.model_name,
+                "reply": response.choices[0].message.content,
+                "tool_calls": [],
+                "usage": {
+                    "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                    "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                    "total_tokens": response.usage.total_tokens if response.usage else 0
+                }
+            }
+
+        except Exception as error:
+            log_event("openai_error", {
                 "error": str(error),
                 "model": self.model_name
             })
@@ -789,6 +822,34 @@ class GroqClient(LLMClient):
             })
             raise
 
+    async def generate_with_context_async(self, messages: list) -> dict:
+        """Async generate response with context (tool results), no tool calling."""
+        try:
+            response = await self._async_client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=500
+            )
+
+            return {
+                "model": self.model_name,
+                "reply": response.choices[0].message.content,
+                "tool_calls": [],
+                "usage": {
+                    "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                    "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                    "total_tokens": response.usage.total_tokens if response.usage else 0
+                }
+            }
+
+        except Exception as error:
+            log_event("groq_error", {
+                "error": str(error),
+                "model": self.model_name
+            })
+            raise
+
 
 class MockLLMClient(LLMClient):
     """Mock client for testing."""
@@ -932,6 +993,11 @@ class MockLLMClient(LLMClient):
             "full_content": reply,
             "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}
         }
+
+    async def generate_with_context_async(self, messages: list) -> dict:
+        """Async mock generate with context (tool results), no tool calling."""
+        last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+        return await self.generate_async(last_user_msg)
 
 
 class FlakyMockLLMClient(MockLLMClient):
