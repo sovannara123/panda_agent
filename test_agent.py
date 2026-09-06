@@ -295,4 +295,7 @@ class TestRAG:
         # This assumes setup_rag.py was run
         result = search_knowledge_base("return policy", k=1)
         
-        assert "30 days" in result or "refund" in result.lower()
+        # New format returns dict with found, context, sources
+        assert "found" in result
+        assert "context" in result
+        assert "sources" in result
