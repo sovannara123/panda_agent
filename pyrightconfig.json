@@ -1,0 +1,28 @@
+{
+  "include": ["**/*.py"],
+  "exclude": [
+    "**/__pycache__",
+    "**/.venv",
+    "**/venv",
+    "**/build",
+    "**/dist"
+  ],
+  "reportMissingTypeStubs": false,
+  "reportUnknownMemberType": false,
+  "reportUnknownVariableType": false,
+  "reportUnknownParameterType": false,
+  "reportUnknownArgumentType": false,
+  "reportOptionalMemberAccess": "warning",
+  "reportAttributeAccessIssue": "warning",
+  "typeCheckingMode": "basic",
+  "pythonVersion": "3.11",
+  "pythonPlatform": "Linux",
+  "venvPath": ".",
+  "venv": ".venv",
+  "stubPath": "typings",
+  "diagnosticSeverityOverrides": {
+    "reportGeneralTypeIssues": "none",
+    "reportOptionalMemberAccess": "warning",
+    "reportAttributeAccessIssue": "warning"
+  }
+}

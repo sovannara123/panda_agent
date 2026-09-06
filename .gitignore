@@ -27,4 +27,3 @@ chromadb/
 *.log
 
 # Type checking
-pyrightconfig.json
