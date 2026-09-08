@@ -27,3 +27,6 @@ chromadb/
 *.log
 
 # Type checking
+
+# Local development
+BUSINESE_BRAIN/

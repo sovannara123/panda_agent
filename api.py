@@ -67,7 +67,7 @@ async def chat_endpoint(request: ChatRequest):
     session_id = request.session_id or str(uuid.uuid4())
     
     try:
-        # This is where FastAPI hands the request to your AI brain.
+        # This is where FastAPI hands the request to AI brain.
         # Wait for the asynchronous agent operation to finish.
         response_text = await agent.respond_async(
             user_input=request.message,

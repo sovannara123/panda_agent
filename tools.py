@@ -31,10 +31,28 @@ KB_KEYWORDS = ["policy", "return", "warranty", "manual", "spec", "specification"
 def search_knowledge_base_tool(query: str) -> dict:
     """Search the internal knowledge base for company policies or product info."""
     try:
-        context = search_knowledge_base(query, k=3)
+        result = search_knowledge_base(query, k=3)
+        if not isinstance(result, dict):
+            return {
+                "status": "error",
+                "message": "Knowledge base search returned an invalid result."
+            }
+
+        if not result.get("found", False):
+            return {
+                "status": "success",
+                "result": {
+                    "context": "No relevant information found.",
+                    "sources": []
+                }
+            }
+
         return {
             "status": "success",
-            "result": {"context": context}
+            "result": {
+                "context": result.get("context", ""),
+                "sources": result.get("sources", [])
+            }
         }
     except Exception as error:
         return {

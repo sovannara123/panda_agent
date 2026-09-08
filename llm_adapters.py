@@ -1212,28 +1212,32 @@ class OllamaClient(LLMClient):
             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         }
 
-    def _build_tool_calling_prompt(self, messages: list, tools: list) -> str:
+    def _build_tool_calling_prompt(self, messages: list, tools: list, include_tools: bool = True) -> str:
         """Build a prompt that instructs the model to output tool calls in JSON format."""
-        tool_descriptions = []
-        for tool in tools:
-            if tool.get("type") == "function":
-                fn = tool["function"]
-                params = fn.get("parameters", {})
-                required = params.get("required", [])
-                properties = params.get("properties", {})
-                
-                param_desc = []
-                for param_name, param_info in properties.items():
-                    req = "required" if param_name in required else "optional"
-                    param_desc.append(f"  - {param_name} ({req}): {param_info.get('description', '')}")
-                
-                tool_descriptions.append(
-                    f"Tool: {fn['name']}\n"
-                    f"Description: {fn['description']}\n"
-                    f"Parameters:\n" + "\n".join(param_desc)
-                )
-        
-        tools_text = "\n\n".join(tool_descriptions) if tool_descriptions else "No tools available."
+        if include_tools:
+            tool_descriptions = []
+            for tool in tools:
+                if tool.get("type") == "function":
+                    fn = tool["function"]
+                    params = fn.get("parameters", {})
+                    required = params.get("required", [])
+                    properties = params.get("properties", {})
+                    
+                    param_desc = []
+                    for param_name, param_info in properties.items():
+                        req = "required" if param_name in required else "optional"
+                        param_desc.append(f"  - {param_name} ({req}): {param_info.get('description', '')}")
+                    
+                    tool_descriptions.append(
+                        f"Tool: {fn['name']}\n"
+                        f"Description: {fn['description']}\n"
+                        f"Parameters:\n" + "\n".join(param_desc)
+                    )
+            
+            tools_text = "\n\n".join(tool_descriptions) if tool_descriptions else "No tools available."
+        else:
+            # Tools already in system prompt
+            tools_text = "(Tool definitions are in the system prompt above)"
         
         # Extract conversation history (excluding system)
         history = []
@@ -1247,15 +1251,15 @@ class OllamaClient(LLMClient):
 
 {tools_text}
 
-When you need to use a tool, respond with a JSON object in this exact format:
+When you need to use a tool, respond with ONLY a JSON object in this exact format (no other text):
 {{"tool_calls": [{{"name": "tool_name", "arguments": {{"param": "value"}}}}]}}
 
-If no tool is needed, respond normally without the tool_calls JSON.
+If no tool is needed, respond with ONLY your normal text response (no JSON, no "tool_calls" mention, no empty braces).
 
 CONVERSATION HISTORY:
 {conversation}
 
-ASSISTANT:"""
+Your response:"""
 
     def _parse_tool_calls(self, response: str) -> list:
         """Parse tool calls from model response."""
@@ -1287,8 +1291,8 @@ ASSISTANT:"""
             result["tool_calls"] = []
             return result
         
-        # Build prompt with tool instructions
-        prompt = self._build_tool_calling_prompt(messages, tools)
+        # Build prompt with tool instructions - tools already in system prompt, just format conversation
+        prompt = self._build_tool_calling_prompt(messages, tools, include_tools=False)
         
         # Generate response
         result = await self.generate_async(prompt)
