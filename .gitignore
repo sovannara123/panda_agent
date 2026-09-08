@@ -22,6 +22,7 @@ user_meta.json
 # Database
 *.db
 chromadb/
+chroma_db/
 
 # Test output
 *.log
