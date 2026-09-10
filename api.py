@@ -1,12 +1,15 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import uuid
 import json
+import tempfile
+import os
 
 from async_agent import AsyncAgent
 from logger import log_event
+from rag import ingest_document
 
 # Global agent instance (initialized once on startup)
 agent_instance = None
@@ -49,6 +52,70 @@ class ChatResponse(BaseModel):
 async def health_check():
     """Health check endpoint for load balancers and monitoring."""
     return {"status": "healthy", "agent_ready": agent_instance is not None}
+
+
+class UploadResponse(BaseModel):
+    source: str
+    filename: str
+    total_pages: int
+    extracted_pages: int
+    total_chunks: int
+    uploaded_at: str
+
+
+class DocumentListResponse(BaseModel):
+    documents: list[dict]
+    count: int
+
+@app.post("/upload", response_model=UploadResponse)
+async def upload_pdf(file: UploadFile = File(...)):
+    """Upload a PDF file, extract text, and ingest into ChromaDB."""
+    
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    
+    # Save uploaded file to temp location
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+    
+    try:
+        # Ingest document into ChromaDB
+        result = ingest_document(tmp_path, source_name=file.filename)
+        
+        log_event("pdf_uploaded", {
+            "filename": file.filename,
+            "total_pages": result["total_pages"],
+            "total_chunks": result["total_chunks"]
+        })
+        
+        return UploadResponse(
+            source=result["source"],
+            filename=file.filename,
+            total_pages=result["total_pages"],
+            extracted_pages=result["extracted_pages"],
+            total_chunks=result["total_chunks"],
+            uploaded_at=result["uploaded_at"]
+        )
+        
+    except Exception as error:
+        log_event("pdf_upload_error", {"filename": file.filename, "error": str(error)})
+        raise HTTPException(status_code=500, detail=f"Failed to process PDF: {str(error)}")
+    
+    finally:
+        # Clean up temp file
+        try:
+            os.unlink(tmp_path)
+        except:
+            pass
+
+
+@app.get("/documents")
+async def list_documents():
+    """List all ingested documents in the knowledge base."""
+    from rag import list_documents as rag_list_documents
+    return {"documents": rag_list_documents()}
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -111,3 +178,6 @@ async def chat_stream_endpoint(request: ChatRequest):
             yield f"data: {json.dumps({'error': str(error)})}\n\n"
     
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+

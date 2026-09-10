@@ -12,7 +12,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir \
+    --default-timeout=300 \
+    --retries=10 \
+    -r requirements.txt
 
 # Runtime stage
 FROM python:3.11-slim
@@ -25,29 +28,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from builder
-COPY --from=builder /root/.local /root/.local
-
-# Add local user to PATH
-ENV PATH=/root/.local/bin:$PATH
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Create non-root user
 RUN groupadd -r panda && useradd -r -g panda panda \
-    && mkdir -p /app/data /app/logs \
+    && mkdir -p /app/data /app/logs /app/chroma_db \
     && chown -R panda:panda /app
 
-# Copy application code
+# Copy application code (all Python files and directories)
 COPY --chown=panda:panda *.py ./
-COPY --chown=panda:panda docs/ ./docs/
+COPY --chown=panda:panda chroma_db/ ./chroma_db/
 
 # Switch to non-root user
 USER panda
 
-# Environment variables
+# Environment variables (can be overridden at runtime)
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    OLLAMA_HOST=http://ollama:11434 \
-    LLM_PROVIDER=ollama \
-    MODEL_NAME=llama3:latest \
     LOG_LEVEL=INFO \
     LOG_FILE=/app/logs/agent.log
 

@@ -23,7 +23,7 @@ class Config(BaseSettings):
 
     # Embedding Configuration
     EMBEDDING_PROVIDER: str = Field(default="local", pattern="^(local|openai)$")
-    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
+    EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
 
     # API Keys (optional, validated at runtime based on provider)
     API_KEY: str = ""

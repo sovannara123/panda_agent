@@ -1,10 +1,13 @@
 import asyncio
 import time
 
+import pytest
+
 from async_agent import AsyncAgent
 from storage import MemoryStorage
 
 
+@pytest.mark.asyncio
 async def test_concurrent_requests():
     """Test handling multiple requests concurrently with separate agents."""
     
