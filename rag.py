@@ -1,5 +1,6 @@
+import uuid
 import chromadb
-from datetime import datetime
+from datetime import datetime, timezone
 from openai import OpenAI
 from config import get_config
 from logger import log_event
@@ -56,6 +57,32 @@ def get_embedding(text: str) -> list[float]:
         return list(model.embed(text))[0].tolist()
 
 
+def get_embeddings_batch(texts: list[str], batch_size: int = 100) -> list[list[float]]:
+    """Generate embeddings for multiple texts in batches.
+    
+    OpenAI supports up to 2048 texts per call. We batch at 100 to balance
+    throughput and memory usage. This turns 3,000 API calls into 30.
+    """
+    config = get_config()
+    all_embeddings: list[list[float]] = []
+
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i + batch_size]
+
+        if config.EMBEDDING_PROVIDER == "openai":
+            client = _get_openai_client()
+            response = client.embeddings.create(
+                model="text-embedding-3-small",
+                input=batch
+            )
+            all_embeddings.extend([item.embedding for item in response.data])
+        else:
+            model = _get_local_model()
+            all_embeddings.extend([e.tolist() for e in model.embed(batch)])
+
+    return all_embeddings
+
+
 def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]:
     """Split text into overlapping chunks."""
     words = text.split()
@@ -85,8 +112,28 @@ class DocumentListResponse(BaseModel):
 app = FastAPI(title="Panda Agent RAG API", version="1.0.0")
 
 
+def _find_page_for_position(char_pos: int, page_boundaries: list[tuple[int, int, int]]) -> int:
+    """Find which page a character position falls in."""
+    for start, end, page_num in page_boundaries:
+        if start <= char_pos < end:
+            return page_num
+    # Default to last page if position is at the very end
+    return page_boundaries[-1][2] if page_boundaries else 1
+
+
 def ingest_document(file_path: str, source_name: str = "") -> dict:
-    """Parse a PDF document and ingest it into the vector database."""
+    """Parse a PDF document and ingest it into the vector database.
+    
+    Fixes applied:
+    - Cross-page chunking: pages are concatenated before chunking so overlap
+      spans page boundaries (no more lost answers at page breaks).
+    - UUID chunk IDs: each upload gets a unique ID to prevent collisions
+      when two files share the same name.
+    - Batched embeddings: chunks are embedded in batches of 100 instead of
+      one API call per chunk (3,000 calls → 30 calls).
+    - Batched upserts: ChromaDB writes happen in batches of 200 to limit
+      peak memory usage.
+    """
     
     # Step 1: Parse the document
     parsed = DocumentParser.parse_pdf(file_path)
@@ -96,46 +143,72 @@ def ingest_document(file_path: str, source_name: str = "") -> dict:
     # Use filename as source if not provided
     source = source_name or metadata["filename"]
     
-    # Step 2: Chunk and embed each page
-    all_chunks = []
-    all_embeddings = []
-    all_metadatas = []
-    all_ids = []
+    # Unique ID per upload — prevents chunk ID collisions between
+    # different files that share the same filename.
+    upload_id = uuid.uuid4().hex[:8]
     
-    upload_timestamp = datetime.utcnow().isoformat()
+    upload_timestamp = datetime.now(timezone.utc).isoformat()
+    
+    # Step 2: Concatenate all pages into a single text with boundary tracking.
+    # This ensures the overlap window in chunk_text() naturally crosses page
+    # boundaries, so answers spanning two pages are never split.
+    full_text = ""
+    page_boundaries: list[tuple[int, int, int]] = []  # (char_start, char_end, page_number)
     
     for page in pages:
-        page_text = page["text"]
-        page_number = page["page_number"]
-        
-        # Chunk this page
-        chunks = chunk_text(page_text)
-        
-        for chunk_idx, chunk in enumerate(chunks):
-            chunk_id = f"{source}_page{page_number}_chunk{chunk_idx}"
-            
-            all_chunks.append(chunk)
-            all_embeddings.append(get_embedding(chunk))
-            all_metadatas.append({
-                "source": source,
-                "page_number": page_number,
-                "chunk_index": chunk_idx,
-                "uploaded_at": upload_timestamp,
-                "total_pages": metadata["total_pages"]
-            })
-            all_ids.append(chunk_id)
+        start = len(full_text)
+        full_text += page["text"] + " "
+        page_boundaries.append((start, len(full_text), page["page_number"]))
     
-    # Step 3: Add to ChromaDB
-    if all_chunks:
-        collection.add(
-            documents=all_chunks,
-            embeddings=all_embeddings,
-            metadatas=all_metadatas,
-            ids=all_ids
+    # Step 3: Chunk the full concatenated text
+    chunks = chunk_text(full_text)
+    
+    # Build chunk metadata with page number mapping
+    all_chunks: list[str] = []
+    all_metadatas: list[dict] = []
+    all_ids: list[str] = []
+    
+    # Track where each chunk starts in full_text for page mapping
+    search_start = 0
+    for chunk_idx, chunk in enumerate(chunks):
+        # Find this chunk's position in the full text to determine its page
+        chunk_pos = full_text.find(chunk[:100], search_start)  # use first 100 chars for faster search
+        if chunk_pos == -1:
+            chunk_pos = search_start  # fallback
+        search_start = max(search_start, chunk_pos + 1)
+        
+        page_number = _find_page_for_position(chunk_pos, page_boundaries)
+        
+        chunk_id = f"{upload_id}_{source}_page{page_number}_chunk{chunk_idx}"
+        
+        all_chunks.append(chunk)
+        all_metadatas.append({
+            "source": source,
+            "upload_id": upload_id,
+            "page_number": page_number,
+            "chunk_index": chunk_idx,
+            "uploaded_at": upload_timestamp,
+            "total_pages": metadata["total_pages"]
+        })
+        all_ids.append(chunk_id)
+    
+    # Step 4: Batch embed all chunks (100 per API call instead of 1)
+    all_embeddings = get_embeddings_batch(all_chunks) if all_chunks else []
+    
+    # Step 5: Upsert to ChromaDB in batches of 200 to limit memory
+    UPSERT_BATCH = 200
+    for i in range(0, len(all_chunks), UPSERT_BATCH):
+        end = i + UPSERT_BATCH
+        collection.upsert(
+            documents=all_chunks[i:end],
+            embeddings=all_embeddings[i:end],
+            metadatas=all_metadatas[i:end],
+            ids=all_ids[i:end]
         )
     
     result = {
         "source": source,
+        "upload_id": upload_id,
         "total_pages": metadata["total_pages"],
         "extracted_pages": metadata["extracted_pages"],
         "total_chunks": len(all_chunks),
@@ -152,36 +225,45 @@ def ingest_text(text: str, source_name: str) -> dict:
     
     chunks = chunk_text(text)
     
-    all_chunks = []
-    all_embeddings = []
-    all_metadatas = []
-    all_ids = []
+    # Unique ID per upload to prevent collisions
+    upload_id = uuid.uuid4().hex[:8]
     
-    upload_timestamp = datetime.utcnow().isoformat()
+    all_chunks: list[str] = []
+    all_metadatas: list[dict] = []
+    all_ids: list[str] = []
+    
+    upload_timestamp = datetime.now(timezone.utc).isoformat()
     
     for chunk_idx, chunk in enumerate(chunks):
-        chunk_id = f"{source_name}_chunk{chunk_idx}"
+        chunk_id = f"{upload_id}_{source_name}_chunk{chunk_idx}"
         
         all_chunks.append(chunk)
-        all_embeddings.append(get_embedding(chunk))
         all_metadatas.append({
             "source": source_name,
+            "upload_id": upload_id,
             "chunk_index": chunk_idx,
             "uploaded_at": upload_timestamp,
             "total_pages": 1
         })
         all_ids.append(chunk_id)
     
-    if all_chunks:
-        collection.add(
-            documents=all_chunks,
-            embeddings=all_embeddings,
-            metadatas=all_metadatas,
-            ids=all_ids
+    # Batch embed all chunks
+    all_embeddings = get_embeddings_batch(all_chunks) if all_chunks else []
+    
+    # Upsert in batches
+    UPSERT_BATCH = 200
+    for i in range(0, len(all_chunks), UPSERT_BATCH):
+        end = i + UPSERT_BATCH
+        collection.upsert(
+            documents=all_chunks[i:end],
+            embeddings=all_embeddings[i:end],
+            metadatas=all_metadatas[i:end],
+            ids=all_ids[i:end]
         )
     
     result = {
         "source": source_name,
+        "upload_id": upload_id,
         "total_pages": 1,
         "extracted_pages": 1,
         "total_chunks": len(all_chunks),

@@ -1,9 +1,14 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
+from pathlib import Path
+import asyncio
 import uuid
 import json
+import shutil
 import tempfile
 import os
 
@@ -33,6 +38,28 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Enable CORS for frontend development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Serve static frontend files
+STATIC_DIR = Path(__file__).parent / "static"
+STATIC_DIR.mkdir(exist_ok=True)
+
+
+@app.get("/")
+async def root():
+    """Serve the frontend."""
+    index_path = STATIC_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path)
+    return RedirectResponse(url="/docs")
 
 
 # Request/Response Models
@@ -68,21 +95,20 @@ class DocumentListResponse(BaseModel):
     count: int
 
 @app.post("/upload", response_model=UploadResponse)
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(file: UploadFile = File(...)):   
     """Upload a PDF file, extract text, and ingest into ChromaDB."""
     
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
     
-    # Save uploaded file to temp location
+    # Save uploaded file to temp location (stream to disk, not into RAM)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-        content = await file.read()
-        tmp.write(content)
+        shutil.copyfileobj(file.file, tmp)
         tmp_path = tmp.name
     
     try:
-        # Ingest document into ChromaDB
-        result = ingest_document(tmp_path, source_name=file.filename)
+        # Ingest document into ChromaDB (offload to thread pool to avoid blocking event loop)
+        result = await asyncio.to_thread(ingest_document, tmp_path, file.filename)
         
         log_event("pdf_uploaded", {
             "filename": file.filename,
