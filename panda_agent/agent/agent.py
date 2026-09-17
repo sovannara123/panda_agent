@@ -1,4 +1,5 @@
 import json 
+import concurrent.futures
 
 from panda_agent.core.retry import RetryError, retry_with_backoff
 from panda_agent.core.context import RequestContext 
@@ -123,6 +124,22 @@ class Agent:
             exceptions=(Exception,),
         )
 
+    def _execute_tool_with_timeout(self, tool_call: dict) -> dict:
+        """Executes a tool call with a timeout using ThreadPoolExecutor."""
+        tool_name = tool_call.get("tool", "unknown")
+        user_plan = self.metadata.get("user_plan", get_config().USER_PLAN)
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(execute_tool, tool_call, user_plan=user_plan)
+            try:
+                # 15 second timeout for sync tools
+                return future.result(timeout=15.0)
+            except concurrent.futures.TimeoutError:
+                return {
+                    "status": "error",
+                    "message": f"Tool '{tool_name}' timed out after 15.0 seconds."
+                }
+
     def _respond_legacy(self, user_input: str, session_id: str | None = None) -> str:
         # Validate input
         user_input = validate_user_input(user_input)
@@ -171,7 +188,7 @@ class Agent:
 
             log_tool_planned(tool_call, ctx)
 
-            tool_result = execute_tool(tool_call, user_plan=self.metadata.get("user_plan", get_config().USER_PLAN))
+            tool_result = self._execute_tool_with_timeout(tool_call)
             success = tool_result.get("status") == "success"
 
             log_tool_result(
@@ -323,10 +340,10 @@ class Agent:
 
             log_tool_planned({"tool": tool_name, "arguments": arguments}, ctx)
 
-            tool_result = execute_tool({
+            tool_result = self._execute_tool_with_timeout({
                 "tool": tool_name,
                 "arguments": arguments
-            }, user_plan=self.metadata.get("user_plan", get_config().USER_PLAN))
+            })
 
             success = tool_result.get("status") == "success"
 
@@ -411,7 +428,7 @@ class Agent:
 
             log_tool_planned(tool_call, ctx)
 
-            tool_result = execute_tool(tool_call, user_plan=self.metadata.get("user_plan", get_config().USER_PLAN))
+            tool_result = self._execute_tool_with_timeout(tool_call)
             success = tool_result.get("status") == "success"
 
             log_tool_result(
@@ -571,10 +588,10 @@ class Agent:
 
             log_tool_planned({"tool": tool_name, "arguments": arguments}, ctx)
 
-            tool_result = execute_tool({
+            tool_result = self._execute_tool_with_timeout({
                 "tool": tool_name,
                 "arguments": arguments
-            }, user_plan=self.metadata.get("user_plan", get_config().USER_PLAN))
+            })
 
             success = tool_result.get("status") == "success"
 

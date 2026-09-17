@@ -10,7 +10,8 @@ from panda_agent.core.logger import (
     log_tool_result,
     log_llm_call,
     log_response,
-    log_fallback
+    log_fallback,
+    log_event
 )
 from panda_agent.llm.fallback import get_fallback_response
 from panda_agent.tools.tools import execute_tool
@@ -92,55 +93,64 @@ class AsyncAgent(Agent):
     async def _handle_tool_calls_async(self, llm_response: dict, messages: list, ctx) -> str:
         """Async tool call handling."""
 
-        tool_calls = llm_response["tool_calls"]
+        iterations = 0
+        MAX_ITERATIONS = 5
 
-        # Add type field required by OpenAI API
-        formatted_tool_calls = []
-        for tc in tool_calls:
-            formatted_tool_calls.append({
-                "id": tc["id"],
-                "type": "function",
-                "function": {
-                    "name": tc["tool"],
-                    "arguments": tc["arguments"]
-                }
-            })
+        while llm_response.get("tool_calls") and iterations < MAX_ITERATIONS:
+            iterations += 1
+            tool_calls = llm_response["tool_calls"]
 
-        messages.append({
-            "role": "assistant",
-            "content": llm_response.get("reply") or "",
-            "tool_calls": formatted_tool_calls
-        })
+            # Add type field required by OpenAI API
+            formatted_tool_calls = []
+            for tc in tool_calls:
+                formatted_tool_calls.append({
+                    "id": tc["id"],
+                    "type": "function",
+                    "function": {
+                        "name": tc["tool"],
+                        "arguments": tc["arguments"]
+                    }
+                })
 
-        # Execute tools concurrently
-        tool_results = await asyncio.gather(*[
-            self._execute_single_tool_async(tool_call, ctx)
-            for tool_call in tool_calls
-        ])
-
-        # Add tool results to messages
-        for tool_call, tool_result in zip(tool_calls, tool_results):
             messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call["id"],
-                "content": json.dumps(tool_result)
+                "role": "assistant",
+                "content": llm_response.get("reply") or "",
+                "tool_calls": formatted_tool_calls
             })
 
-        # Call LLM again with tool results
-        try:
-            # Use generate_with_context_async if available (for Ollama), otherwise generate_with_tools_async
-            if hasattr(self.llm, 'generate_with_context_async'):
-                final_response = await self.llm.generate_with_context_async(messages)
-            else:
-                final_response = await self.llm.generate_with_tools_async(messages, OPENAI_TOOLS)
+            # Execute tools concurrently
+            tool_results = await asyncio.gather(*[
+                self._execute_single_tool_async(tool_call, ctx)
+                for tool_call in tool_calls
+            ])
 
-            log_llm_call(self.llm.model_name, success=True, context=ctx)
+            # Add tool results to messages
+            for tool_call, tool_result in zip(tool_calls, tool_results):
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call["id"],
+                    "content": json.dumps(tool_result)
+                })
 
-            return final_response["reply"]
+            # Call LLM again with tool results
+            try:
+                # Use generate_with_context_async if available (for Ollama), otherwise generate_with_tools_async
+                if hasattr(self.llm, 'generate_with_context_async'):
+                    llm_response = await self.llm.generate_with_context_async(messages)
+                else:
+                    llm_response = await self.llm.generate_with_tools_async(messages, OPENAI_TOOLS)
 
-        except Exception as error:
-            log_llm_call(self.llm.model_name, success=False, error=str(error), context=ctx)
-            return get_fallback_response("tool_failed", details=str(error))
+                log_llm_call(self.llm.model_name, success=True, context=ctx)
+
+            except Exception as error:
+                log_llm_call(self.llm.model_name, success=False, error=str(error), context=ctx)
+                return get_fallback_response("tool_failed", details=str(error))
+
+        if iterations >= MAX_ITERATIONS:
+            log_event("max_iterations_reached", {"context": ctx})
+            return "I needed too many steps to solve this problem. Please try rephrasing your request."
+
+        return llm_response.get("reply") or "I'm not sure how to respond to that."
 
     async def _execute_single_tool_async(self, tool_call: dict, ctx) -> dict:
         """Execute a single tool asynchronously."""
@@ -155,12 +165,20 @@ class AsyncAgent(Agent):
         log_tool_planned({"tool": tool_name, "arguments": arguments}, ctx)
 
         # Execute tool (tools are sync, but we run them in thread pool)
-        tool_result = await asyncio.to_thread(
-            execute_tool,
-            {"tool": tool_name, "arguments": arguments},
-            user_plan=self.metadata.get("user_plan", get_config().USER_PLAN)
-        )
-
+        try:
+            tool_result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    execute_tool,
+                    {"tool": tool_name, "arguments": arguments},
+                    user_plan=self.metadata.get("user_plan", get_config().USER_PLAN)
+                ),
+                timeout=15.0
+            )
+        except asyncio.TimeoutError:
+            tool_result = {
+                "status": "error",
+                "message": f"Tool '{tool_name}' timed out after 15.0 seconds."
+            }
 
         
         success = tool_result.get("status") == "success"
@@ -223,19 +241,25 @@ class AsyncAgent(Agent):
 
         try:
             collected_content: list[str] = []
-            tool_calls_data: list[dict] | None = None
+            iterations = 0
+            MAX_ITERATIONS = 5
 
-            async for chunk in self.llm.generate_with_tools_stream_async(messages, OPENAI_TOOLS):  # type: ignore[union-attr]
-                if chunk["type"] == "content":
-                    collected_content.append(chunk["content"])
-                    yield chunk["content"]
+            while iterations < MAX_ITERATIONS:
+                iterations += 1
+                tool_calls_data: list[dict] | None = None
 
-                elif chunk["type"] == "tool_calls":
-                    tool_calls_data = chunk["tool_calls"]
+                async for chunk in self.llm.generate_with_tools_stream_async(messages, OPENAI_TOOLS):  # type: ignore[union-attr]
+                    if chunk["type"] == "content":
+                        collected_content.append(chunk["content"])
+                        yield chunk["content"]
+                    elif chunk["type"] == "tool_calls":
+                        tool_calls_data = chunk["tool_calls"]
 
-            log_llm_call(self.llm.model_name, success=True, context=ctx)
+                log_llm_call(self.llm.model_name, success=True, context=ctx)
 
-            if tool_calls_data:
+                if not tool_calls_data:
+                    break
+
                 # Add type field required by OpenAI API
                 formatted_tool_calls = []
                 for tc in tool_calls_data:
@@ -250,10 +274,10 @@ class AsyncAgent(Agent):
 
                 messages.append({
                     "role": "assistant",
-                    "content": "".join(collected_content),
+                    "content": "",
                     "tool_calls": formatted_tool_calls  # type: ignore[dict-item]
                 })
-                                                             
+
                 # Execute tools concurrently
                 tool_results = await asyncio.gather(*[
                     self._execute_single_tool_async(tool_call, ctx)
@@ -267,15 +291,13 @@ class AsyncAgent(Agent):
                         "content": json.dumps(tool_result)
                     })
 
-                async for chunk in self.llm.generate_with_tools_stream_async(messages, OPENAI_TOOLS):  # type: ignore[union-attr]
-                    if chunk["type"] == "content":
-                        collected_content.append(chunk["content"])
-                        yield chunk["content"]
+            if iterations >= MAX_ITERATIONS:
+                log_event("max_iterations_reached", {"context": ctx})
+                fallback = "I needed too many steps to solve this problem. Please try rephrasing your request."
+                collected_content.append(fallback)
+                yield fallback
 
-                full_response = "".join(collected_content)
-
-            else:
-                full_response = "".join(collected_content)
+            full_response = "".join(collected_content)
 
             self.add_message("assistant", full_response)
             log_response(full_response, ctx)

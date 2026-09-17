@@ -1,5 +1,7 @@
 import logging
 import re
+import time
+from panda_agent.core.retry import retry_with_backoff, RetryError
 from panda_agent.rag.pipeline import search_knowledge_base
 from panda_agent.schemas.tool_schemas import TOOL_SCHEMAS
 
@@ -228,7 +230,21 @@ def execute_tool(tool_call, user_plan="free"):
                 "message": f"Authorization failed: '{tool_name}' requires a premium plan."
             }
 
-        result = tool_registry[tool_name](**arguments)
+        start_time = time.time()
+        
+        def _run_tool():
+            return tool_registry[tool_name](**arguments)
+            
+        try:
+            result = retry_with_backoff(_run_tool, max_attempts=3, delay_seconds=0.5)
+        except RetryError as e:
+            return {
+                "status": "error",
+                "message": f"Tool execution failed after retries: {str(e)}"
+            }
+            
+        elapsed_ms = (time.time() - start_time) * 1000
+        logger.info(f"Tool '{tool_name}' executed in {elapsed_ms:.2f}ms")
 
         if isinstance(result, dict) and "error" in result:
             return {
@@ -240,25 +256,21 @@ def execute_tool(tool_call, user_plan="free"):
             "status": "success",
             "result": result
         }
-
     except UnknownToolError as exc:
         logger.warning("Unknown tool: %s", exc.tool_name)
         return {
             "status": "error",
             "message": str(exc)
         }
-
     except TypeError as exc:
         logger.warning("Invalid tool arguments: %s", exc) 
         return {
             "status": "error",
             "message": f"Invalid tool arguments: {exc}"
         }
-            
     except Exception as exc:
         logger.exception("Tool %s failed", tool_name)
         return {
             "status": "error",
             "message": f"Tool failed: {exc}"
         }
-    
