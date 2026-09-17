@@ -6,8 +6,8 @@ import asyncio
 import httpx
 import re
 from typing import AsyncGenerator, Generator
-from config import get_config
-from logger import get_logger, log_event
+from panda_agent.core.config import get_config
+from panda_agent.core.logger import log_event
 
 
 class LLMError(Exception):
@@ -62,12 +62,14 @@ class LLMClient(ABC):
     @abstractmethod
     async def generate_stream_async(self, prompt: str) -> AsyncGenerator[dict, None]:
         """Async stream response token by token. Yields content chunks."""
-        pass
+        if False:
+            yield {}  # pragma: no cover
 
     @abstractmethod
     async def generate_with_tools_stream_async(self, messages: list, tools: list) -> AsyncGenerator[dict, None]:
         """Async stream response with function calling support."""
-        pass
+        if False:
+            yield {}  # pragma: no cover
 
     @abstractmethod
     async def generate_with_context_async(self, messages: list) -> dict:
@@ -913,7 +915,6 @@ class MockLLMClient(LLMClient):
 
     def generate_with_tools_stream(self, messages: list, tools: list):
         """Mock streaming with tools - no tool calls, just content."""
-        reply = None
         words = "Mock response with tools.".split()
 
         for i, word in enumerate(words):

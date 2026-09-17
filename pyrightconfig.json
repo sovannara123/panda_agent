@@ -17,12 +17,6 @@
   "typeCheckingMode": "basic",
   "pythonVersion": "3.11",
   "pythonPlatform": "Linux",
-  "venvPath": ".",
-  "venv": ".venv",
   "stubPath": "typings",
-  "diagnosticSeverityOverrides": {
-    "reportGeneralTypeIssues": "none",
-    "reportOptionalMemberAccess": "warning",
-    "reportAttributeAccessIssue": "warning"
-  }
+  "reportGeneralTypeIssues": "none"
 }

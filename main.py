@@ -1,6 +1,5 @@
-from agent import Agent
+from panda_agent.agent.agent import Agent
 import uuid
-import sys
 
 
 def main():

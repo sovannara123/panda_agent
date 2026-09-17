@@ -1,11 +1,11 @@
 import json
 import re
 from typing import Dict, List
-from agent import Agent
-from eval_dataset import GOLDEN_DATASET
-from logger import log_event
-from llm_adapters import create_llm_client, MockLLMClient
-from config import get_config
+from panda_agent.agent.agent import Agent
+from scripts.eval_dataset import GOLDEN_DATASET
+from panda_agent.core.logger import log_event
+from panda_agent.llm.adapters import MockLLMClient
+from panda_agent.core.config import get_config
 
 class AgentEvaluator:
     def __init__(self, use_mock_llm: bool = True):

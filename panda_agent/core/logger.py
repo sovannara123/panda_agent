@@ -3,11 +3,8 @@ import json
 import os
 import sys
 from logging.handlers import RotatingFileHandler
-from context import RequestContext
-from typing import TYPE_CHECKING, Optional
-
-if TYPE_CHECKING:
-    from config import Config
+from panda_agent.core.context import RequestContext
+from typing import Optional
 
 
 class JsonFormatter(logging.Formatter):
@@ -113,7 +110,7 @@ def get_logger(name: str = "agent") -> logging.Logger:
     """Get or create the module logger (configured on first use)."""
     global _log
     if _log is None:
-        from config import get_config
+        from panda_agent.core.config import get_config
         cfg = get_config()
         _log = setup_logger(
             name=name,
@@ -155,14 +152,6 @@ def log_usage_check(plan: str, messages_used: int, limit: int | None, blocked: b
     }, context)
 
 
-def log_usage_blocked(plan: str, messages_used: int, limit: int | None, context: Optional[RequestContext] = None):
-    log_event("usage_blocked", {
-        "plan": plan,
-        "messages_used": messages_used,
-        "limit": limit
-    }, context)
-
-
 def log_tool_planned(tool_call: dict, context: Optional[RequestContext] = None):
     log_event("tool_planned", {"tool_call": tool_call}, context)
 
@@ -172,22 +161,6 @@ def log_tool_result(tool_name: str, success: bool, result: dict, context: Option
         "tool": tool_name,
         "success": success,
         "result": result
-    }, context)
-
-
-def log_tool_failed(tool_name: str, message: str, context: Optional[RequestContext] = None):
-    log_event("tool_failed", {
-        "tool": tool_name,
-        "message": message
-    }, context)
-
-
-def log_tool_call(tool_name, arguments, success, duration_ms=0, context: Optional[RequestContext] = None):
-    log_event("tool_call", {
-        "tool": tool_name,
-        "args": arguments,
-        "success": success,
-        "duration_ms": round(duration_ms, 2)
     }, context)
 
 

@@ -3,15 +3,15 @@ import logging
 
 import pytest
 
-from agent import Agent
-from config import get_config
-from context import RequestContext
-from llm_adapters import LLMError, MockLLMClient, FlakyMockLLMClient
-from logger import log
-from retry import retry_with_backoff, RetryError
-from storage import MemoryStorage
-from tools import validate_tool_call, plan_tool_call, execute_tool, tool_registry
-from evaluator import AgentEvaluator
+from panda_agent.agent.agent import Agent
+from panda_agent.core.config import get_config
+from panda_agent.core.context import RequestContext
+from panda_agent.llm.adapters import LLMError, MockLLMClient, FlakyMockLLMClient
+from panda_agent.core.logger import log
+from panda_agent.core.retry import retry_with_backoff, RetryError
+from panda_agent.rag.storage import MemoryStorage
+from panda_agent.tools.tools import validate_tool_call, plan_tool_call, execute_tool, tool_registry
+from scripts.evaluator import AgentEvaluator
 
 
 
@@ -84,7 +84,7 @@ class TestUsageLimit:
         assert agent.metadata["messages_used"] == get_config().MESSAGE_LIMIT_FREE
 
     def test_custom_limit_from_config(self, agent, monkeypatch):
-        from config import reload_config
+        from panda_agent.core.config import reload_config
         monkeypatch.setenv("MESSAGE_LIMIT_FREE", "3")
         reload_config()
         agent.metadata["messages_used"] = 2
@@ -290,7 +290,7 @@ class TestRAG:
         assert "search_knowledge_base" in tool_registry
 
     def test_rag_search_returns_context(self):
-        from rag import search_knowledge_base
+        from panda_agent.rag.pipeline import search_knowledge_base
         
         # This assumes setup_rag.py was run
         result = search_knowledge_base("return policy", k=1)

@@ -1,8 +1,8 @@
 {
   "total_tests": 5,
-  "passed_tests": 3,
-  "failed_tests": 2,
-  "overall_score": 60.0,
+  "passed_tests": 5,
+  "failed_tests": 0,
+  "overall_score": 100.0,
   "detailed_results": [
     {
       "test_id": "test_01",
@@ -30,7 +30,7 @@
       ],
       "keywords_found": [
         "shipped",
-        "a100"
+        "A100"
       ],
       "score": 1.0,
       "passed": true,
@@ -39,7 +39,7 @@
     {
       "test_id": "test_03",
       "input": "What is the return policy?",
-      "response": "Based on the knowledge base:\n\n[Source: panda_agent_docs]\nPanda Agent Return Policy: Customers can return any product within 30 days of purchase for a full refund. Products must be in original condition with all packaging. To initiate a return, the customer must provide their order ID. Refunds are processed within 5-7 business days after the item is received. Electronics have a 1-year limited warranty covering manufacturing defects.\n\n---\n\n[Source: panda_agent_docs]\nLaptop Model X100 Manual: Battery life is up to 12 hours on a single charge. To reset the device, hold the power button for 10 seconds. The device supports Wi-Fi 6 and Bluetooth 5.2. Do not expose the device to temperatures above 40\u00b0C (104\u00b0F).",
+      "response": "Based on the knowledge base:\n\n[Source: panda_agent_docs_0, Page ?]\nPanda Agent Return Policy: Customers can return any product within 30 days of purchase for a full refund. Products must be in original condition with all packaging. To initiate a return, the customer must provide their order ID. Refunds are processed within 5-7 business days after the item is received. Electronics have a 1-year limited warranty covering manufacturing defects.\n\n---\n\n[Source: test_document.pdf, Page 1]\nTest PDF Document This is a test document for the Panda Agent RAG system. It contains multiple lines of text to test PDF parsing. Return policy: 30 days full refund with original packaging. Warranty: 1 year on electronics.\n\n---\n\n[Source: Lec01_Introduction to C.pdf, Page 50]\n50Our main() Function \u2756printf (): output text to console \u2756String literal: written surrounded by double quotes \u2756return 0; \u2713Exits the function, returning value 0to caller/* The main() function */ intmain(void)/* entry point */ { /* write message to console */ printf(\"Hello, FE students! \"); // semicolon (;) ends a statement return0; /* exit (0 => success) */ } Lectured by: KorSokchea",
       "expected_keywords": [
         "30 days",
         "refund"
@@ -55,29 +55,33 @@
     {
       "test_id": "test_04",
       "input": "Tell me a joke about Python",
-      "response": "[Mock LLM] I received your request.",
+      "response": "Why do Python programmers prefer dark mode? Because light attracts bugs!",
       "expected_keywords": [
         "joke",
         "python"
       ],
-      "keywords_found": [],
-      "score": 0.0,
-      "passed": false,
-      "status": "\u274c FAIL"
+      "keywords_found": [
+        "python"
+      ],
+      "score": 0.5,
+      "passed": true,
+      "status": "\u2705 PASS"
     },
     {
       "test_id": "test_05",
       "input": "What is the price of a spaceship?",
-      "response": "[Mock LLM] I received your request.",
+      "response": "Sorry, that action failed. You can try again or ask in a different way. Details: Product 'What is the price of a spaceship?' not found.",
       "expected_keywords": [
         "not found",
         "error",
         "unavailable"
       ],
-      "keywords_found": [],
-      "score": 0.0,
-      "passed": false,
-      "status": "\u274c FAIL"
+      "keywords_found": [
+        "not found"
+      ],
+      "score": 0.3333333333333333,
+      "passed": true,
+      "status": "\u2705 PASS"
     }
   ]
 }

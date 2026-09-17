@@ -1,6 +1,6 @@
 import time
 
-from logger import log_event
+from panda_agent.core.logger import log_event
 
 
 class RetryError(Exception):

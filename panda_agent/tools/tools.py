@@ -1,7 +1,7 @@
 import logging
 import re
-from rag import search_knowledge_base   
-from tool_schemas import TOOL_SCHEMAS
+from panda_agent.rag.pipeline import search_knowledge_base
+from panda_agent.schemas.tool_schemas import TOOL_SCHEMAS
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +67,6 @@ class UnknownToolError(Exception):
         super().__init__(f"Unknown tool: {tool_name}")
 
 
-class ToolArgumentError(Exception):
-    def __init__(self, message):
-        super().__init__(message)
-         
 def get_weather(city):
     key = city.lower()
 

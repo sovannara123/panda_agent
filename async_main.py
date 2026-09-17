@@ -1,7 +1,7 @@
 import asyncio
 import uuid
 
-from async_agent import AsyncAgent
+from panda_agent.agent.async_agent import AsyncAgent
 
 
 async def main():

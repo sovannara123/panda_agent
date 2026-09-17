@@ -3,8 +3,8 @@ import time
 
 import pytest
 
-from async_agent import AsyncAgent
-from storage import MemoryStorage
+from panda_agent.agent.async_agent import AsyncAgent
+from panda_agent.rag.storage import MemoryStorage
 
 
 @pytest.mark.asyncio

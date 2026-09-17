@@ -1,11 +1,9 @@
 import asyncio
 import json
-import uuid
-
-from agent import Agent
-from context import RequestContext
-from tool_formatter import OPENAI_TOOLS
-from logger import (
+from panda_agent.agent.agent import Agent
+from panda_agent.core.context import RequestContext
+from panda_agent.tools.formatter import OPENAI_TOOLS
+from panda_agent.core.logger import (
     log_user_input,
     log_usage_check,
     log_tool_planned,
@@ -14,8 +12,8 @@ from logger import (
     log_response,
     log_fallback
 )
-from fallback import get_fallback_response
-from tools import execute_tool
+from panda_agent.llm.fallback import get_fallback_response
+from panda_agent.tools.tools import execute_tool
 
 
 class AsyncAgent(Agent):

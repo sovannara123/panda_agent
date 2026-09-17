@@ -1,4 +1,4 @@
-from tool_schemas import TOOL_SCHEMAS
+from panda_agent.schemas.tool_schemas import TOOL_SCHEMAS
 
 
 def convert_to_openai_tools(schemas: dict) -> list:

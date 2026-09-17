@@ -1,7 +1,6 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from uuid import UUID
-import re
 """
                     API
                      │
@@ -67,63 +66,19 @@ class ChatRequest(BaseModel):
             except ValueError:
                 raise ValueError("Invalid session_id format")
         return v
-# define structure of respone send back to client 
+# define structure of response sent back to client 
 class ChatResponse(BaseModel):
     """Response model for chat endpoint."""
     response: str = Field(..., description="Agent response")
     session_id: str = Field(..., description="Session ID")
-    request_id: str = Field(..., description="Request ID")
+    request_id: Optional[str] = Field(default=None, description="Request ID")
     metadata: Optional[dict] = Field(default=None, description="Optional metadata")
 
-# return this information whether Ai service is working 
+
+# response model for health check
 class HealthResponse(BaseModel):
     """Response model for health check."""
     status: str = Field(..., description="Health status")
-    version: str = Field(..., description="Agent version")
-    timestamp: str = Field(..., description="Current timestamp")
-
-# create standard format for error 
-class ErrorResponse(BaseModel):
-    """Standard error response."""
-    error: str = Field(..., description="Error message")
-    code: str = Field(..., description="Error code")
-    details: Optional[dict] = Field(default=None, description="Optional error details")
-
-#Store information about a conversation session 
-class SessionInfo(BaseModel):
-    """Session information."""
-    session_id: str
-    message_count: int
-    created_at: str
-    last_activity: str
-
-#make the ai requesting a valid rool and valide argument
-class ToolCallRequest(BaseModel):
-    """Request model for tool calls."""
-    tool: str = Field(..., pattern="^(get_product_price|check_order_status|get_weather|test_failure)$")
-    arguments: dict = Field(..., description="Tool arguments")
-
-    @field_validator("arguments")
-    @classmethod
-    def validate_arguments(cls, v: dict, info) -> dict:
-        tool = info.data.get("tool") if hasattr(info, "data") else ""
-        if tool == "get_product_price":
-            if "product_name" not in v or not v["product_name"]:
-                raise ValueError("product_name is required")
-        elif tool == "check_order_status":
-            if "order_id" not in v or not v["order_id"]:
-                raise ValueError("order_id is required")
-            if not re.match(r"^A\d{3}$", v["order_id"]):
-                raise ValueError("Invalid order_id format (must be A followed by 3 digits)")
-        elif tool == "get_weather":
-            if "city" not in v or not v["city"]:
-                raise ValueError("city is required")
-        return v
-
-# define the result after the tool has executed 
-class ToolCallResponse(BaseModel):
-    """Response model for tool calls."""
-    tool: str
-    success: bool
-    result: Optional[dict] = None
-    error: Optional[str] = None
+    agent_ready: bool = Field(default=True, description="Agent readiness status")
+    version: Optional[str] = Field(default="1.0.0", description="Agent version")
+    timestamp: Optional[str] = Field(default=None, description="Current timestamp")

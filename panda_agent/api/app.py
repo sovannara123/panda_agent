@@ -1,6 +1,5 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
@@ -12,9 +11,10 @@ import shutil
 import tempfile
 import os
 
-from async_agent import AsyncAgent
-from logger import log_event
-from rag import ingest_document
+from panda_agent.agent.async_agent import AsyncAgent
+from panda_agent.core.logger import log_event
+from panda_agent.rag.pipeline import ingest_document
+from panda_agent.schemas.schemas import ChatRequest, ChatResponse, HealthResponse
 
 # Global agent instance (initialized once on startup)
 agent_instance = None
@@ -62,23 +62,12 @@ async def root():
     return RedirectResponse(url="/docs")
 
 
-# Request/Response Models
-class ChatRequest(BaseModel):
-    message: str
-    session_id: str | None = None
-
-
-class ChatResponse(BaseModel):
-    response: str
-    session_id: str
-
-
 # --- Endpoints ---   
 
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint for load balancers and monitoring."""
-    return {"status": "healthy", "agent_ready": agent_instance is not None}
+    return {"status": "healthy", "agent_ready": agent_instance is not None, "version": "1.0.0"}
 
 
 class UploadResponse(BaseModel):
@@ -140,7 +129,7 @@ async def upload_pdf(file: UploadFile = File(...)):
 @app.get("/documents")
 async def list_documents():
     """List all ingested documents in the knowledge base."""
-    from rag import list_documents as rag_list_documents
+    from panda_agent.rag.pipeline import list_documents as rag_list_documents
     return {"documents": rag_list_documents()}
 
 

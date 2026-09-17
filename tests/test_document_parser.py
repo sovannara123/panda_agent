@@ -1,9 +1,8 @@
 import pytest
 import tempfile
 import os
-from pathlib import Path
 
-from document_parser import DocumentParser, DocumentParseError
+from panda_agent.rag.document_parser import DocumentParser, DocumentParseError
 
 
 class TestDocumentParser:

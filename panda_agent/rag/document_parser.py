@@ -1,6 +1,6 @@
 from pathlib import Path
 from PyPDF2 import PdfReader
-from logger import log_event
+from panda_agent.core.logger import log_event
 
 
 class DocumentParseError(Exception):

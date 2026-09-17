@@ -36,7 +36,9 @@ RUN groupadd -r panda && useradd -r -g panda panda \
     && mkdir -p /app/data /app/logs /app/chroma_db \
     && chown -R panda:panda /app
 
-# Copy application code (all Python files and directories)
+# Copy application code
+COPY --chown=panda:panda panda_agent/ ./panda_agent/
+COPY --chown=panda:panda scripts/ ./scripts/
 COPY --chown=panda:panda *.py ./
 COPY --chown=panda:panda chroma_db/ ./chroma_db/
 
@@ -57,4 +59,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 EXPOSE 8000
 
 # Run application
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "panda_agent.api.app:app", "--host", "0.0.0.0", "--port", "8000"]

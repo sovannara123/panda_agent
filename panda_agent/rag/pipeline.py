@@ -1,10 +1,11 @@
 import uuid
+from typing import Any
 import chromadb
 from datetime import datetime, timezone
 from openai import OpenAI
-from config import get_config
-from logger import log_event
-from document_parser import DocumentParser, DocumentParseError
+from panda_agent.core.config import get_config
+from panda_agent.core.logger import log_event
+from panda_agent.rag.document_parser import DocumentParser, DocumentParseError
 from fastembed import TextEmbedding
 from fastapi import FastAPI, HTTPException, UploadFile, File
 import tempfile
@@ -165,7 +166,7 @@ def ingest_document(file_path: str, source_name: str = "") -> dict:
     
     # Build chunk metadata with page number mapping
     all_chunks: list[str] = []
-    all_metadatas: list[dict] = []
+    all_metadatas: list[dict[str, Any]] = []
     all_ids: list[str] = []
     
     # Track where each chunk starts in full_text for page mapping
@@ -201,8 +202,8 @@ def ingest_document(file_path: str, source_name: str = "") -> dict:
         end = i + UPSERT_BATCH
         collection.upsert(
             documents=all_chunks[i:end],
-            embeddings=all_embeddings[i:end],
-            metadatas=all_metadatas[i:end],
+            embeddings=all_embeddings[i:end],  # type: ignore[arg-type]
+            metadatas=all_metadatas[i:end],  # type: ignore[arg-type]
             ids=all_ids[i:end]
         )
     
@@ -229,7 +230,7 @@ def ingest_text(text: str, source_name: str) -> dict:
     upload_id = uuid.uuid4().hex[:8]
     
     all_chunks: list[str] = []
-    all_metadatas: list[dict] = []
+    all_metadatas: list[dict[str, Any]] = []
     all_ids: list[str] = []
     
     upload_timestamp = datetime.now(timezone.utc).isoformat()
@@ -256,8 +257,8 @@ def ingest_text(text: str, source_name: str) -> dict:
         end = i + UPSERT_BATCH
         collection.upsert(
             documents=all_chunks[i:end],
-            embeddings=all_embeddings[i:end],
-            metadatas=all_metadatas[i:end],
+            embeddings=all_embeddings[i:end],  # type: ignore[arg-type]
+            metadatas=all_metadatas[i:end],  # type: ignore[arg-type]
             ids=all_ids[i:end]
         )
     
