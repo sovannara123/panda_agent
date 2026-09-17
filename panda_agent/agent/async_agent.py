@@ -247,9 +247,11 @@ class AsyncAgent(Agent):
             while iterations < MAX_ITERATIONS:
                 iterations += 1
                 tool_calls_data: list[dict] | None = None
+                iteration_content: list[str] = []
 
                 async for chunk in self.llm.generate_with_tools_stream_async(messages, OPENAI_TOOLS):  # type: ignore[union-attr]
                     if chunk["type"] == "content":
+                        iteration_content.append(chunk["content"])
                         collected_content.append(chunk["content"])
                         yield chunk["content"]
                     elif chunk["type"] == "tool_calls":
@@ -274,7 +276,7 @@ class AsyncAgent(Agent):
 
                 messages.append({
                     "role": "assistant",
-                    "content": "",
+                    "content": "".join(iteration_content),
                     "tool_calls": formatted_tool_calls  # type: ignore[dict-item]
                 })
 

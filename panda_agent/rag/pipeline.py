@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 
 # Initialize ChromaDB
-chroma_client = chromadb.PersistentClient(path="./chroma_db")
+chroma_client = chromadb.PersistentClient(path=get_config().CHROMA_DB_PATH)
 collection = chroma_client.get_or_create_collection(name="knowledge_base")
 
 # Lazy-loaded clients

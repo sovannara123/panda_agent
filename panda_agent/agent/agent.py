@@ -15,6 +15,9 @@ from panda_agent.rag.storage import SQLiteStorage
 
 logger = get_logger(__name__)    
 
+# Global executor for sync tool calls to prevent thread churn across Agent instances
+_tool_executor = concurrent.futures.ThreadPoolExecutor(max_workers=10)
+
 
 def validate_user_input(message: str) -> str: 
     """Validate and sanitize user input."""
@@ -129,16 +132,15 @@ class Agent:
         tool_name = tool_call.get("tool", "unknown")
         user_plan = self.metadata.get("user_plan", get_config().USER_PLAN)
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(execute_tool, tool_call, user_plan=user_plan)
-            try:
-                # 15 second timeout for sync tools
-                return future.result(timeout=15.0)
-            except concurrent.futures.TimeoutError:
-                return {
-                    "status": "error",
-                    "message": f"Tool '{tool_name}' timed out after 15.0 seconds."
-                }
+        future = _tool_executor.submit(execute_tool, tool_call, user_plan=user_plan)
+        try:
+            # 15 second timeout for sync tools
+            return future.result(timeout=15.0)
+        except concurrent.futures.TimeoutError:
+            return {
+                "status": "error",
+                "message": f"Tool '{tool_name}' timed out after 15.0 seconds."
+            }
 
     def _respond_legacy(self, user_input: str, session_id: str | None = None) -> str:
         # Validate input

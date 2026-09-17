@@ -59,4 +59,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 EXPOSE 8000
 
 # Run application
-CMD ["uvicorn", "panda_agent.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["gunicorn", "panda_agent.api.app:app", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]

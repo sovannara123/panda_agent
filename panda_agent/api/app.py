@@ -13,6 +13,7 @@ import os
 
 from panda_agent.agent.async_agent import AsyncAgent
 from panda_agent.core.logger import log_event
+from panda_agent.core.config import get_config
 from panda_agent.rag.pipeline import ingest_document
 from panda_agent.schemas.schemas import ChatRequest, ChatResponse, HealthResponse
 
@@ -37,10 +38,14 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Enable CORS for frontend development
+# Enable CORS securely based on configuration
+allowed_origins_str = get_config().ALLOWED_ORIGINS
+# Parse the comma-separated string into a list, handling whitespace
+allowed_origins_list = [origin.strip() for origin in allowed_origins_str.split(",")] if allowed_origins_str else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -47,6 +47,12 @@ class Config(BaseSettings):
     LOG_FILE: str | None = None
     LOG_JSON: bool = False
 
+    # Security
+    ALLOWED_ORIGINS: str = "*"
+
+    # Database
+    CHROMA_DB_PATH: str = "./chroma_db"
+
     @model_validator(mode="after")
     def validate_keys(self) -> "Config":
         """Validate that required API keys are present for the selected provider."""
