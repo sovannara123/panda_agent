@@ -171,7 +171,7 @@ class Agent:
 
             log_tool_planned(tool_call, ctx)
 
-            tool_result = execute_tool(tool_call)
+            tool_result = execute_tool(tool_call, user_plan=self.metadata.get("user_plan", get_config().USER_PLAN))
             success = tool_result.get("status") == "success"
 
             log_tool_result(
@@ -326,7 +326,7 @@ class Agent:
             tool_result = execute_tool({
                 "tool": tool_name,
                 "arguments": arguments
-            })
+            }, user_plan=self.metadata.get("user_plan", get_config().USER_PLAN))
 
             success = tool_result.get("status") == "success"
 
@@ -411,7 +411,7 @@ class Agent:
 
             log_tool_planned(tool_call, ctx)
 
-            tool_result = execute_tool(tool_call)
+            tool_result = execute_tool(tool_call, user_plan=self.metadata.get("user_plan", get_config().USER_PLAN))
             success = tool_result.get("status") == "success"
 
             log_tool_result(
@@ -574,7 +574,7 @@ class Agent:
             tool_result = execute_tool({
                 "tool": tool_name,
                 "arguments": arguments
-            })
+            }, user_plan=self.metadata.get("user_plan", get_config().USER_PLAN))
 
             success = tool_result.get("status") == "success"
 

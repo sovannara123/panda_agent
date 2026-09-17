@@ -16,16 +16,14 @@ from panda_agent.core.logger import log_event
 from panda_agent.rag.pipeline import ingest_document
 from panda_agent.schemas.schemas import ChatRequest, ChatResponse, HealthResponse
 
-# Global agent instance (initialized once on startup)
-agent_instance = None
-
+# Global agent instance removed for thread safety
+# Instead, an agent is instantiated per request
 
 @asynccontextmanager # async context manager for lifespan events 
 async def lifespan(app: FastAPI):
     """Initialize resources on startup, clean up on shutdown."""
-    global agent_instance
     print("🚀 Starting up Panda Agent API...")
-    agent_instance = AsyncAgent() # 
+    log_event("api_startup", {"status": "ready"})
     log_event("api_startup", {"status": "ready"})
     yield
     print("🛑 Shutting down Panda Agent API...")
@@ -67,7 +65,7 @@ async def root():
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint for load balancers and monitoring."""
-    return {"status": "healthy", "agent_ready": agent_instance is not None, "version": "1.0.0"}
+    return {"status": "healthy", "agent_ready": True, "version": "1.0.0"}
 
 
 class UploadResponse(BaseModel):
@@ -137,16 +135,12 @@ async def list_documents():
 async def chat_endpoint(request: ChatRequest):
     """Main chat endpoint."""
 
-    # check whether agent exist if not return 503 service unavailable error
-    if agent_instance is None: 
-        raise HTTPException(status_code=503, detail="Agent is not initialized")
-    
-    # Type narrowing: agent_instance is guaranteed to be AsyncAgent after the check
-    agent: AsyncAgent = agent_instance  # type: ignore[assignment]
-    
     # Generate a session ID if not provided
     # Use the user's session ID if they gave one; otherwise create a new one.
     session_id = request.session_id or str(uuid.uuid4())
+    
+    # Initialize a new agent isolated to this session
+    agent = AsyncAgent(session_id=session_id)
     
     try:
         # This is where FastAPI hands the request to AI brain.
@@ -171,13 +165,8 @@ async def chat_endpoint(request: ChatRequest):
 async def chat_stream_endpoint(request: ChatRequest):
     """Streaming chat endpoint."""
     
-    if agent_instance is None:
-        raise HTTPException(status_code=503, detail="Agent is not initialized")
-    
-    # Type narrowing: agent_instance is guaranteed to be AsyncAgent after the check
-    agent: AsyncAgent = agent_instance  # type: ignore[assignment]
-    
     session_id = request.session_id or str(uuid.uuid4())
+    agent = AsyncAgent(session_id=session_id)
     
     async def generate():
         try:

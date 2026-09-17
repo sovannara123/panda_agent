@@ -199,7 +199,7 @@ tool_registry = {
     "test_failure": test_failure, 
     "search_knowledge_base": search_knowledge_base_tool
 }
-def execute_tool(tool_call):
+def execute_tool(tool_call, user_plan="free"):
     if not isinstance(tool_call, dict):
         return {
             "status": "error",
@@ -212,6 +212,21 @@ def execute_tool(tool_call):
     try:
         if tool_name not in tool_registry:
             raise UnknownToolError(tool_name)
+
+        if not validate_tool_call(tool_call):
+            return {
+                "status": "error",
+                "message": f"Validation failed: missing required arguments or invalid schema for {tool_name}."
+            }
+            
+        schema = TOOL_SCHEMAS.get(tool_name, {})
+        required_plan = schema.get("required_plan", "free")
+        
+        if required_plan == "premium" and user_plan != "premium":
+            return {
+                "status": "error",
+                "message": f"Authorization failed: '{tool_name}' requires a premium plan."
+            }
 
         result = tool_registry[tool_name](**arguments)
 

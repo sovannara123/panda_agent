@@ -11,7 +11,8 @@ TOOL_SCHEMAS = {
                 }
             },
             "required": ["query"]
-        }
+        },
+        "required_plan": "premium"
     },
     "get_product_price": {
         "name": "get_product_price",
@@ -25,7 +26,8 @@ TOOL_SCHEMAS = {
                 }
             },
             "required": ["product_name"]
-        }
+        },
+        "required_plan": "free"
     },
     "check_order_status": {
         "name": "check_order_status",
@@ -39,7 +41,8 @@ TOOL_SCHEMAS = {
                 }
             },
             "required": ["order_id"]
-        }
+        },
+        "required_plan": "free"
     },
     "get_weather": {
         "name": "get_weather",
@@ -53,7 +56,8 @@ TOOL_SCHEMAS = {
                 }
             },
             "required": ["city"]
-        }
+        },
+        "required_plan": "free"
     },
     "test_failure": {
         "name": "test_failure",
@@ -62,7 +66,8 @@ TOOL_SCHEMAS = {
             "type": "object",
             "properties": {},
             "required": []
-        }
+        },
+        "required_plan": "free"
     }
 }
 

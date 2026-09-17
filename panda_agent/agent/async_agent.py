@@ -14,6 +14,7 @@ from panda_agent.core.logger import (
 )
 from panda_agent.llm.fallback import get_fallback_response
 from panda_agent.tools.tools import execute_tool
+from panda_agent.core.config import get_config
 
 
 class AsyncAgent(Agent):
@@ -156,7 +157,8 @@ class AsyncAgent(Agent):
         # Execute tool (tools are sync, but we run them in thread pool)
         tool_result = await asyncio.to_thread(
             execute_tool,
-            {"tool": tool_name, "arguments": arguments}
+            {"tool": tool_name, "arguments": arguments},
+            user_plan=self.metadata.get("user_plan", get_config().USER_PLAN)
         )
 
 
@@ -267,6 +269,7 @@ class AsyncAgent(Agent):
 
                 async for chunk in self.llm.generate_with_tools_stream_async(messages, OPENAI_TOOLS):  # type: ignore[union-attr]
                     if chunk["type"] == "content":
+                        collected_content.append(chunk["content"])
                         yield chunk["content"]
 
                 full_response = "".join(collected_content)
