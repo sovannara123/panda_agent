@@ -13,7 +13,15 @@ Whenever I ask for help, analyze the request and the files involved. If the cont
 - **Testing**: If the request involves unit tests, integration tests, or touches files in the `tests/` directory, apply the `agency-test-automation-engineer` skill.
 - **Architecture**: If the request is about system design, refactoring, or project structure, apply the `agency-software-architect` skill.
 
+## Post-Execution Documentation Rule
+
+Whenever any plan or major task is executed and completed:
+- Update the relevant plan file in `plans/` (mark tasks as completed `- [x]`, update Status to `Completed`, and note any execution outcomes).
+- Update technical documentation in `docs/` and `README.md` if public contracts, flow diagrams, API interfaces, architecture, or environment configurations changed.
+- Ensure all docstrings, comments, and reference files accurately reflect the updated implementation.
+
 ## General Project Guidelines
 - Always write type-hinted, clean, and maintainable Python code.
 - Prefer explicit over implicit implementations.
 - Maintain and update docstrings when making significant changes to functions or classes.
+

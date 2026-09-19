@@ -49,9 +49,17 @@ class Config(BaseSettings):
 
     # Security
     ALLOWED_ORIGINS: str = "*"
+    REQUIRE_API_KEY: bool = False
+    MAX_UPLOAD_SIZE_MB: int = Field(default=10, ge=1, le=100)
+    RATE_LIMIT_PER_MINUTE: int = Field(default=20, ge=1, le=1000)
 
-    # Database
+    # Database & Vector Store
     CHROMA_DB_PATH: str = "./chroma_db"
+    VECTOR_DB_PROVIDER: str = Field(default="chroma", pattern="^(chroma|qdrant|pinecone|memory)$")
+    QDRANT_URL: str = "http://localhost:6333"
+    QDRANT_API_KEY: str | None = None
+    PINECONE_API_KEY: str | None = None
+    PINECONE_INDEX_NAME: str = "panda-knowledge-base"
 
     @model_validator(mode="after")
     def validate_keys(self) -> "Config":

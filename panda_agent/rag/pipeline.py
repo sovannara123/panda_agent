@@ -2,21 +2,24 @@ import uuid
 from typing import Any
 import chromadb
 from datetime import datetime, timezone
+import datetime
+import tempfile
+import pathlib
+import time
+import os
 from openai import OpenAI
 from panda_agent.core.config import get_config
 from panda_agent.core.logger import log_event
+from panda_agent.core.observability import tracer, RAG_LATENCY
 from panda_agent.rag.document_parser import DocumentParser, DocumentParseError
 from fastembed import TextEmbedding
 from fastapi import FastAPI, HTTPException, UploadFile, File
-import tempfile
 import shutil
 from pathlib import Path
 from pydantic import BaseModel
 
 
-# Initialize ChromaDB
-chroma_client = chromadb.PersistentClient(path=get_config().CHROMA_DB_PATH)
-collection = chroma_client.get_or_create_collection(name="knowledge_base")
+from panda_agent.rag.vector_store import get_vector_store
 
 # Lazy-loaded clients
 _openai_client: OpenAI | None = None
@@ -141,6 +144,12 @@ def ingest_document(file_path: str, source_name: str = "") -> dict:
     metadata = parsed["metadata"]
     pages = parsed["pages"]
     
+    # Enforce maximum page limit guard (max 50 pages)
+    MAX_PAGES = 50
+    if len(pages) > MAX_PAGES:
+        pages = pages[:MAX_PAGES]
+        metadata["extracted_pages"] = MAX_PAGES
+    
     # Use filename as source if not provided
     source = source_name or metadata["filename"]
     
@@ -196,16 +205,14 @@ def ingest_document(file_path: str, source_name: str = "") -> dict:
     # Step 4: Batch embed all chunks (100 per API call instead of 1)
     all_embeddings = get_embeddings_batch(all_chunks) if all_chunks else []
     
-    # Step 5: Upsert to ChromaDB in batches of 200 to limit memory
-    UPSERT_BATCH = 200
-    for i in range(0, len(all_chunks), UPSERT_BATCH):
-        end = i + UPSERT_BATCH
-        collection.upsert(
-            documents=all_chunks[i:end],
-            embeddings=all_embeddings[i:end],  # type: ignore[arg-type]
-            metadatas=all_metadatas[i:end],  # type: ignore[arg-type]
-            ids=all_ids[i:end]
-        )
+    # Step 5: Upsert to vector store adapter
+    vector_store = get_vector_store()
+    vector_store.add_chunks(
+        ids=all_ids,
+        chunks=all_chunks,
+        embeddings=all_embeddings,  # type: ignore[arg-type]
+        metadatas=all_metadatas
+    )
     
     result = {
         "source": source,
@@ -251,16 +258,14 @@ def ingest_text(text: str, source_name: str) -> dict:
     # Batch embed all chunks
     all_embeddings = get_embeddings_batch(all_chunks) if all_chunks else []
     
-    # Upsert in batches
-    UPSERT_BATCH = 200
-    for i in range(0, len(all_chunks), UPSERT_BATCH):
-        end = i + UPSERT_BATCH
-        collection.upsert(
-            documents=all_chunks[i:end],
-            embeddings=all_embeddings[i:end],  # type: ignore[arg-type]
-            metadatas=all_metadatas[i:end],  # type: ignore[arg-type]
-            ids=all_ids[i:end]
-        )
+    # Upsert to vector store adapter
+    vector_store = get_vector_store()
+    vector_store.add_chunks(
+        ids=all_ids,
+        chunks=all_chunks,
+        embeddings=all_embeddings,  # type: ignore[arg-type]
+        metadatas=all_metadatas
+    )
     
     result = {
         "source": source_name,
@@ -280,36 +285,35 @@ def search_knowledge_base(query: str, k: int = 3) -> dict:
     
     Returns structured result with sources for citations.
     """
-    
-    query_embedding = get_embedding(query)
-    
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=k
-    )
-    
-    documents = results.get("documents") or []
-    if not documents or not documents[0]:
-        return {
-            "found": False,
-            "context": "No relevant information found in the knowledge base.",
-            "sources": []
-        }
-
-    # Chroma may return metadata entries as None when no metadata exists.
-    metadata_list = results.get("metadatas") or []
-    top_metadata = metadata_list[0] if metadata_list and metadata_list[0] is not None else []
-
-    # Ensure top_metadata is a list (not None) for type checker
-    if top_metadata is None:
-        top_metadata = []
+    with tracer.start_as_current_span("rag.retrieval") as span:
+        start_time = time.time()
+        
+        query_embedding = get_embedding(query)
+        
+        vector_store = get_vector_store()
+        matches = vector_store.query(query_embedding=query_embedding, top_k=k)
+        
+        duration = time.time() - start_time
+        RAG_LATENCY.observe(duration)
+        span.set_attribute("rag.latency_seconds", duration)
+        
+        if not matches:
+            span.set_attribute("rag.chunks_retrieved", 0)
+            return {
+                "found": False,
+                "context": "No relevant information found in the knowledge base.",
+                "sources": []
+            }
+        
+        span.set_attribute("rag.chunks_retrieved", len(matches))
 
     # Build context with source tracking
     context_parts = []
     sources = []
 
-    for i, doc in enumerate(documents[0]):
-        meta = top_metadata[i] if i < len(top_metadata) and top_metadata[i] is not None else {}
+    for item in matches:
+        doc = item["chunk"]
+        meta = item.get("metadata", {})
         source = meta.get("source", "unknown")
         page = meta.get("page_number", "?")
 
@@ -317,7 +321,6 @@ def search_knowledge_base(query: str, k: int = 3) -> dict:
             f"[Source: {source}, Page {page}]\n{doc}"
         )
 
-        # Track unique sources
         source_info = {
             "source": source,
             "page": page
@@ -325,36 +328,20 @@ def search_knowledge_base(query: str, k: int = 3) -> dict:
         if source_info not in sources:
             sources.append(source_info)
     
+    raw_context = "\n\n---\n\n".join(context_parts)
+    fenced_context = f"<retrieved_context>\n{raw_context}\n</retrieved_context>"
+
     return {
         "found": True,
-        "context": "\n\n---\n\n".join(context_parts),
+        "context": fenced_context,
         "sources": sources
     }
 
 
 def list_documents() -> list[dict]:
     """List all unique documents in the knowledge base."""
-    
-    all_data = collection.get(include=["metadatas"])
-    
-    if not all_data["metadatas"]:
-        return []
-    
-    # Group by source
-    docs = {}
-    for meta in all_data["metadatas"]:
-        source = meta.get("source")
-        if source and source not in docs:
-            docs[source] = {
-                "source": source,
-                "total_pages": meta.get("total_pages", 0),
-                "uploaded_at": meta.get("uploaded_at", "unknown"),
-                "chunk_count": 0
-            }
-        if source:
-            docs[source]["chunk_count"] += 1
-    
-    return list(docs.values())
+    vector_store = get_vector_store()
+    return vector_store.list_documents()
 
 
 @app.post("/upload", response_model=UploadResponse)

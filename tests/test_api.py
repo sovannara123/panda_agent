@@ -1,4 +1,6 @@
 import pytest
+import os
+os.environ["REQUIRE_API_KEY"] = "false"
 from fastapi.testclient import TestClient
 from panda_agent.api.app import app
 

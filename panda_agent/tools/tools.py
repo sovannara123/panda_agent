@@ -4,6 +4,7 @@ import time
 from panda_agent.core.retry import retry_with_backoff, RetryError
 from panda_agent.rag.pipeline import search_knowledge_base
 from panda_agent.schemas.tool_schemas import TOOL_SCHEMAS
+from panda_agent.core.observability import tracer, TOOL_LATENCY, TOOL_ERRORS
 
 logger = logging.getLogger(__name__)
 
@@ -211,66 +212,85 @@ def execute_tool(tool_call, user_plan="free"):
     tool_name = tool_call.get("tool") 
     arguments = tool_call.get("arguments", {})
 
-    try:
-        if tool_name not in tool_registry:
-            raise UnknownToolError(tool_name)
-
-        if not validate_tool_call(tool_call):
-            return {
-                "status": "error",
-                "message": f"Validation failed: missing required arguments or invalid schema for {tool_name}."
-            }
-            
-        schema = TOOL_SCHEMAS.get(tool_name, {})
-        required_plan = schema.get("required_plan", "free")
-        
-        if required_plan == "premium" and user_plan != "premium":
-            return {
-                "status": "error",
-                "message": f"Authorization failed: '{tool_name}' requires a premium plan."
-            }
+    with tracer.start_as_current_span("tool.execution") as span:
+        span.set_attribute("tool.name", tool_name)
+        span.set_attribute("tool.parameters", str(arguments))
 
         start_time = time.time()
         
-        def _run_tool():
-            return tool_registry[tool_name](**arguments)
-            
         try:
-            result = retry_with_backoff(_run_tool, max_attempts=3, delay_seconds=0.5)
-        except RetryError as e:
-            return {
-                "status": "error",
-                "message": f"Tool execution failed after retries: {str(e)}"
-            }
+            if tool_name not in tool_registry:
+                raise UnknownToolError(tool_name)
+
+            if not validate_tool_call(tool_call):
+                return {
+                    "status": "error",
+                    "message": f"Validation failed: missing required arguments or invalid schema for {tool_name}."
+                }
+                
+            schema = TOOL_SCHEMAS.get(tool_name, {})
+            required_plan = schema.get("required_plan", "free")
             
-        elapsed_ms = (time.time() - start_time) * 1000
-        logger.info(f"Tool '{tool_name}' executed in {elapsed_ms:.2f}ms")
+            if required_plan == "premium" and user_plan != "premium":
+                return {
+                    "status": "error",
+                    "message": f"Authorization failed: '{tool_name}' requires a premium plan."
+                }
+            
+            def _run_tool():
+                return tool_registry[tool_name](**arguments)
+                
+            try:
+                result = retry_with_backoff(_run_tool, max_attempts=3, delay_seconds=0.5)
+            except RetryError as e:
+                TOOL_ERRORS.labels(tool_name=tool_name, error_type="RetryError").inc()
+                span.record_exception(e)
+                span.set_attribute("tool.success", False)
+                return {
+                    "status": "error",
+                    "message": f"Tool execution failed after retries: {str(e)}"
+                }
+                
+            elapsed_ms = (time.time() - start_time) * 1000
+            TOOL_LATENCY.labels(tool_name=tool_name).observe((time.time() - start_time))
+            logger.info(f"Tool '{tool_name}' executed in {elapsed_ms:.2f}ms")
 
-        if isinstance(result, dict) and "error" in result:
+            if isinstance(result, dict) and "error" in result:
+                span.set_attribute("tool.success", False)
+                return {
+                    "status": "error",
+                    "message": result["error"]
+                }
+
+            span.set_attribute("tool.success", True)
+            return {
+                "status": "success",
+                "result": result
+            }
+        except UnknownToolError as exc:
+            TOOL_ERRORS.labels(tool_name=tool_name, error_type="UnknownToolError").inc()
+            logger.warning("Unknown tool: %s", exc.tool_name)
+            span.record_exception(exc)
+            span.set_attribute("tool.success", False)
             return {
                 "status": "error",
-                "message": result["error"]
+                "message": str(exc)
             }
-
-        return {
-            "status": "success",
-            "result": result
-        }
-    except UnknownToolError as exc:
-        logger.warning("Unknown tool: %s", exc.tool_name)
-        return {
-            "status": "error",
-            "message": str(exc)
-        }
-    except TypeError as exc:
-        logger.warning("Invalid tool arguments: %s", exc) 
-        return {
-            "status": "error",
-            "message": f"Invalid tool arguments: {exc}"
-        }
-    except Exception as exc:
-        logger.exception("Tool %s failed", tool_name)
-        return {
-            "status": "error",
-            "message": f"Tool failed: {exc}"
-        }
+        except TypeError as exc:
+            TOOL_ERRORS.labels(tool_name=tool_name, error_type="TypeError").inc()
+            logger.warning("Invalid tool arguments: %s", exc) 
+            span.record_exception(exc)
+            span.set_attribute("tool.success", False)
+            return {
+                "status": "error",
+                "message": f"Invalid tool arguments: {exc}"
+            }
+        except Exception as exc:
+            TOOL_ERRORS.labels(tool_name=tool_name, error_type=type(exc).__name__).inc()
+            logger.exception("Tool %s failed", tool_name)
+            span.record_exception(exc)
+            span.set_attribute("tool.success", False)
+            return {
+                "status": "error",
+                "message": f"Tool failed: {exc}"
+            }
